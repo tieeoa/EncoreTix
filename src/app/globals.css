@@ -1,0 +1,236 @@
+@import "tailwindcss";
+
+/* Kunci aplikasi di mode terang: varian `dark:` hanya aktif bila ada class
+   `.dark` — dan class itu tidak pernah dipasang (fitur switch tema dihapus).
+   Tanpa baris ini, `dark:` mengikuti tema OS dan tampilan jadi belang. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Samakan seluruh aksen biru ke palet brand (indigo).
+   Semua class `blue-*` di seluruh aplikasi otomatis memakai indigo —
+   tombol, badge, fokus form, dan info box jadi konsisten tanpa edit per file. */
+@theme {
+  --color-blue-50: var(--color-indigo-50);
+  --color-blue-100: var(--color-indigo-100);
+  --color-blue-200: var(--color-indigo-200);
+  --color-blue-300: var(--color-indigo-300);
+  --color-blue-400: var(--color-indigo-400);
+  --color-blue-500: var(--color-indigo-500);
+  --color-blue-600: var(--color-indigo-600);
+  --color-blue-700: var(--color-indigo-700);
+  --color-blue-800: var(--color-indigo-800);
+  --color-blue-900: var(--color-indigo-900);
+  --color-blue-950: var(--color-indigo-950);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Loading dots with bobbing up-down effect */
+@keyframes dot-bounce {
+
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+
+  50% {
+    transform: translateY(-3px);
+  }
+}
+
+.loading-dots::before,
+.loading-dots::after,
+.loading-dots span {
+  content: '';
+  display: inline-block;
+  box-sizing: border-box;
+  width: 4px;
+  height: 4px;
+  margin-left: 2px;
+  border-radius: 9999px;
+  background-color: currentColor;
+  vertical-align: middle;
+  animation: dot-bounce 0.9s infinite ease-in-out;
+}
+
+.loading-dots::before {
+  animation-delay: 0s;
+}
+
+.loading-dots span {
+  animation-delay: 0.3s;
+}
+
+.loading-dots::after {
+  animation-delay: 0.6s;
+}
+
+/* Entrance animation for card reveals */
+@keyframes merch-card-in {
+  0% {
+    opacity: 0;
+    transform: translateY(28px) scale(0.92);
+    filter: blur(6px);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(-4px) scale(1.02);
+    filter: blur(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+.merch-card-enter {
+  animation: merch-card-in 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Animasi fade-up netral — bisa dipakai semua halaman */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.6s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Versi cepat untuk konten accordion yang dibuka-tutup */
+.animate-fade-fast {
+  animation: fade-up 0.28s ease-out both;
+}
+
+/* Gradien CTA yang bergerak sendiri */
+@keyframes gradient-pan {
+  0%, 100% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+}
+
+.animate-gradient-slow {
+  background-size: 200% auto;
+  animation: gradient-pan 4s ease-in-out infinite;
+}
+
+/* Kilau menyapu saat tombol di-hover */
+.btn-shine {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.btn-shine::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 45%;
+  background: linear-gradient(105deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+  transform: translateX(-180%) skewX(-20deg);
+}
+
+.group:hover .btn-shine::after {
+  animation: shine-sweep 0.9s ease;
+}
+
+@keyframes shine-sweep {
+  to {
+    transform: translateX(380%) skewX(-20deg);
+  }
+}
+
+/* Sembunyikan scrollbar untuk baris yang geser otomatis */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* ===== Rekap keseruan event selesai ===== */
+
+/* Emoji/ikon mengambang naik-turun */
+@keyframes rekap-float {
+  0%, 100% {
+    transform: translateY(0) rotate(-6deg);
+  }
+
+  50% {
+    transform: translateY(-14px) rotate(6deg);
+  }
+}
+
+.animate-rekap-float {
+  animation: rekap-float 3.2s ease-in-out infinite;
+}
+
+/* Angka/statistik muncul memantul */
+@keyframes rekap-pop {
+  0% {
+    opacity: 0;
+    transform: translateY(26px) scale(0.85);
+  }
+
+  60% {
+    opacity: 1;
+    transform: translateY(-6px) scale(1.04);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-rekap-pop {
+  animation: rekap-pop 0.7s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* Pita teks berjalan */
+@keyframes rekap-marquee {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.animate-rekap-marquee {
+  animation: rekap-marquee 18s linear infinite;
+}
