@@ -1,24 +1,25 @@
 import { NextResponse } from 'next/server'
-import { getServerSupabase } from '../../lib/supabaseClient'
+import { mkdir, writeFile } from 'fs/promises'
+import path from 'path'
 
 export const dynamic = 'force-dynamic'
 
 export const runtime = 'nodejs'
-// Max ukuran unggahan: 6MB (default free tier supabase storage)
 export const maxDuration = 30
 
-const BUCKET = 'band-images'
+const DEFAULT_BUCKET = 'band-images'
 const ALLOWED_EXT = ['png', 'jpg', 'jpeg', 'webp']
 const MAX_SIZE = 6 * 1024 * 1024
+const BUCKET_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 
 // POST /api/uploads
-// Upload gambar (PNG/JPG) ke Supabase Storage.
+// Upload gambar (PNG/JPG) ke penyimpanan lokal: data/uploads/<bucket>/<file>.
 // Body: FormData dengan field `file` (wajib) & `bucket` (opsional, default 'band-images').
-// Response: { url }
+// Response: { url } — URL relatif yang bisa langsung dipakai di <img src>.
 export async function POST(request: Request) {
   try {
     let file: File | null = null
-    let bucket = BUCKET
+    let bucket = DEFAULT_BUCKET
     try {
       const formData = await request.formData()
       file = formData.get('file') as File | null
@@ -28,6 +29,10 @@ export async function POST(request: Request) {
       }
     } catch {
       return NextResponse.json({ error: 'Body harus berupa FormData dengan field file' }, { status: 400 })
+    }
+
+    if (!BUCKET_PATTERN.test(bucket)) {
+      return NextResponse.json({ error: 'Nama bucket tidak valid' }, { status: 400 })
     }
 
     if (!file || typeof file === 'string') {
@@ -42,26 +47,13 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Ukuran file maksimal 6MB' }, { status: 400 })
     }
 
-    const supabase = getServerSupabase()
-    const path = `${Date.now()}-${crypto.randomUUID()}.${ext}`
+    const filename = `${Date.now()}-${crypto.randomUUID()}.${ext}`
+    const dir = path.join(process.cwd(), 'data', 'uploads', bucket)
+    await mkdir(dir, { recursive: true })
     const bytes = Buffer.from(await file.arrayBuffer())
+    await writeFile(path.join(dir, filename), bytes)
 
-    const { error: upErr } = await supabase.storage.from(bucket).upload(path, bytes, {
-      contentType: file.type || `image/${ext === 'jpg' ? 'jpeg' : ext}`,
-      upsert: false,
-    })
-    if (upErr) {
-      if (upErr.message.toLowerCase().includes('bucket')) {
-        return NextResponse.json(
-          { error: `Bucket "${bucket}" belum dibuat. Buat di dashboard Supabase -> Storage (Public bucket).` },
-          { status: 500 }
-        )
-      }
-      throw new Error(upErr.message)
-    }
-
-    const { data: publicUrl } = supabase.storage.from(bucket).getPublicUrl(path)
-    return NextResponse.json({ url: publicUrl.publicUrl }, { status: 201 })
+    return NextResponse.json({ url: `/uploads/${bucket}/${filename}` }, { status: 201 })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
     return NextResponse.json({ error: message }, { status: 500 })

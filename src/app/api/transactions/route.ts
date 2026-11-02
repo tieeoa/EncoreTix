@@ -244,7 +244,7 @@ export async function POST(request: Request) {
       }
     }
 
-    const bookingId = generateBookingCode()
+    const bookingId = await generateBookingCode(supabase)
 
     // 5. Simpan pesanan_tiket
     const { data: pesanan, error: pesananError } = await supabase

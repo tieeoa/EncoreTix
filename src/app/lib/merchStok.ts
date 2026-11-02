@@ -3,6 +3,15 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export const MERCH_SIZES = ['S', 'M', 'L', 'XL', 'XXL'] as const
 export type MerchSize = (typeof MERCH_SIZES)[number]
 
+// Ukuran khusus untuk produk tanpa ukuran tertentu (topi, gantungan kunci, dll).
+// Stoknya disimpan di stok_s. Penanda (flag) = stok_xxl diset -1.
+// Tidak perlu migrasi DB — nilai -1 tidak mungkin muncul pada stok normal.
+export const FREE_SIZE = 'FREE' as const
+export type AnySize = MerchSize | typeof FREE_SIZE
+
+// Nilai sentinel yang disimpan di kolom stok_xxl untuk menandai produk FREE_SIZE.
+export const FREE_SIZE_SENTINEL = -1
+
 type SizeColumn = 'stok_s' | 'stok_m' | 'stok_l' | 'stok_xl' | 'stok_xxl'
 
 const SIZE_COLUMNS: Record<MerchSize, SizeColumn> = {
@@ -17,8 +26,17 @@ export function sizeColumn(size: MerchSize): SizeColumn {
   return SIZE_COLUMNS[size]
 }
 
+/**
+ * Cek apakah produk adalah FREE_SIZE (tanpa pilihan ukuran).
+ * Penanda: stok_xxl === -1.
+ */
+export function isFreeSizeProduct(product: Record<string, unknown>): boolean {
+  return Number(product.stok_xxl ?? 0) === FREE_SIZE_SENTINEL
+}
+
 // Menghitung sisa stok online per ukuran:
-// sisa_<ukuran> = stok_<ukuran> - total qty pesanan 'berhasil' dengan ukuran tsb.
+// - Produk biasa: sisa[S/M/L/XL/XXL] = stok_kolom - terjual
+// - Produk FREE_SIZE: sisa['FREE'] = stok_s - terjual dengan ukuran 'FREE'
 export async function withSisaStok<T extends { id: string }>(
   supabase: SupabaseClient,
   rows: T[]
@@ -42,11 +60,19 @@ export async function withSisaStok<T extends { id: string }>(
   }
 
   return rows.map((r) => {
+    const rec = r as Record<string, unknown>
     const bySize = sold[r.id] ?? {}
     const sisa: Record<string, number> = {}
-    for (const s of MERCH_SIZES) {
-      const cap = Number((r as Record<string, unknown>)[sizeColumn(s)] ?? 0)
-      sisa[s] = Math.max(0, cap - (bySize[s] ?? 0))
+
+    if (isFreeSizeProduct(rec)) {
+      // Produk tanpa ukuran: total stok ada di stok_s
+      const cap = Number(rec.stok_s ?? 0)
+      sisa[FREE_SIZE] = Math.max(0, cap - (bySize[FREE_SIZE] ?? 0))
+    } else {
+      for (const s of MERCH_SIZES) {
+        const cap = Number(rec[sizeColumn(s)] ?? 0)
+        sisa[s] = Math.max(0, cap - (bySize[s] ?? 0))
+      }
     }
     return { ...r, sisa_stok: sisa }
   })

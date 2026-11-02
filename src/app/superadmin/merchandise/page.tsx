@@ -10,7 +10,7 @@ import { getAdminSession, useAdminName } from '@/lib/adminAuth'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useSelectedEventStatus } from '@/lib/useEventStatus'
 import { useLang } from '@/lib/i18n'
-import { MERCH_SIZES, sizeColumn } from '@/app/lib/merchStok'
+import { MERCH_SIZES, sizeColumn, FREE_SIZE, FREE_SIZE_SENTINEL, isFreeSizeProduct } from '@/app/lib/merchStok'
 import { friendlyError } from '@/app/lib/fetchError'
 import { parseRupiah } from '@/app/lib/rupiah'
 import Toast from '@/components/Toast'
@@ -56,6 +56,11 @@ const EMPTY_FORM = {
   id_band: '',
 }
 
+const EMPTY_FORM_FREE = {
+  ...EMPTY_FORM,
+  stok_xxl: String(FREE_SIZE_SENTINEL), // sentinel flag
+}
+
 type SortKey = 'nama' | 'band' | 'harga' | 'stok_total' | 'terjual' | 'revenue'
 
 function formatRupiah(n: number) { return 'Rp ' + n.toLocaleString('id-ID') }
@@ -88,6 +93,7 @@ export default function SuperAdminMerchandisePage() {
   const [editing, setEditing] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [form, setForm] = useState(EMPTY_FORM)
+  const [freeSize, setFreeSize] = useState(false)
   const [photos, setPhotos] = useState<string[]>([])
   const [newFiles, setNewFiles] = useState<File[]>([])
   const [photoUrl, setPhotoUrl] = useState('')
@@ -221,6 +227,7 @@ export default function SuperAdminMerchandisePage() {
 
   const resetForm = () => {
     setForm(EMPTY_FORM)
+    setFreeSize(false)
     setEditing(null)
     setPhotos([])
     setNewFiles([])
@@ -231,6 +238,7 @@ export default function SuperAdminMerchandisePage() {
 
   const startAdd = () => {
     setForm({ ...EMPTY_FORM, id_band: bands[0]?.id || '' })
+    setFreeSize(false)
     setEditing(null)
     setPhotos([])
     setNewFiles([])
@@ -240,15 +248,17 @@ export default function SuperAdminMerchandisePage() {
   }
 
   const startEdit = (p: MerchProduct) => {
+    const isFS = isFreeSizeProduct(p as unknown as Record<string, unknown>)
+    setFreeSize(isFS)
     setForm({
       nama_merch: p.nama_merch,
       kategori: p.kategori || '',
       harga: String(p.harga),
-      stok_s: String(p.stok_s ?? 0),
-      stok_m: String(p.stok_m ?? 0),
-      stok_l: String(p.stok_l ?? 0),
-      stok_xl: String(p.stok_xl ?? 0),
-      stok_xxl: String(p.stok_xxl ?? 0),
+      stok_s: String(isFS ? p.stok_s ?? 0 : p.stok_s ?? 0),
+      stok_m: isFS ? '' : String(p.stok_m ?? 0),
+      stok_l: isFS ? '' : String(p.stok_l ?? 0),
+      stok_xl: isFS ? '' : String(p.stok_xl ?? 0),
+      stok_xxl: isFS ? String(FREE_SIZE_SENTINEL) : String(p.stok_xxl ?? 0),
       id_band: p.id_band || bands[0]?.id || '',
     })
     setEditing(p.id)
@@ -324,10 +334,10 @@ export default function SuperAdminMerchandisePage() {
         kategori: form.kategori || null,
         harga,
         stok_s: Number(form.stok_s || 0),
-        stok_m: Number(form.stok_m || 0),
-        stok_l: Number(form.stok_l || 0),
-        stok_xl: Number(form.stok_xl || 0),
-        stok_xxl: Number(form.stok_xxl || 0),
+        stok_m: freeSize ? 0 : Number(form.stok_m || 0),
+        stok_l: freeSize ? 0 : Number(form.stok_l || 0),
+        stok_xl: freeSize ? 0 : Number(form.stok_xl || 0),
+        stok_xxl: freeSize ? FREE_SIZE_SENTINEL : Number(form.stok_xxl || 0),
         id_band: form.id_band,
         foto: fotos,
         event: editing ? undefined : eventId || null,
@@ -491,17 +501,56 @@ export default function SuperAdminMerchandisePage() {
                   {String(form.harga).trim() !== '' && (
                     <p className="text-[11px] text-slate-500 mt-1">= {formatRupiah(parseRupiah(form.harga))}</p>
                   )}</div>
-                <div className="col-span-full"><label className="block text-xs font-semibold text-slate-700 mb-1.5">{t({ ID: 'Stok Online per Ukuran', EN: 'Online Stock per Size' })}</label>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
-                    {MERCH_SIZES.map((s) => (
-                      <div key={s}>
-                        <span className="block text-[11px] text-slate-500 mb-1 font-bold">{s}</span>
-                        <input type="number" min={0} value={form[sizeColumn(s)]} onChange={(e) => setForm({ ...form, [sizeColumn(s)]: e.target.value })}
-                          placeholder="0"
-                          className="w-full bg-[#f8fafc] border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
-                      </div>
-                    ))}
-                  </div></div>
+                <div className="col-span-full">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-700">
+                      {freeSize
+                        ? t({ ID: 'Total Stok (Tanpa Ukuran)', EN: 'Total Stock (No Size)' })
+                        : t({ ID: 'Stok Online per Ukuran', EN: 'Online Stock per Size' })}
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={freeSize}
+                        onChange={(e) => {
+                          setFreeSize(e.target.checked)
+                          if (e.target.checked) {
+                            setForm((f) => ({ ...f, stok_m: '', stok_l: '', stok_xl: '', stok_xxl: String(FREE_SIZE_SENTINEL) }))
+                          } else {
+                            setForm((f) => ({ ...f, stok_xxl: '' }))
+                          }
+                        }}
+                        className="w-4 h-4 rounded accent-blue-600"
+                      />
+                      <span className="text-xs font-medium text-slate-600">
+                        {t({ ID: 'Tanpa Ukuran', EN: 'No Size' })}
+                      </span>
+                    </label>
+                  </div>
+                  {freeSize ? (
+                    <div className="max-w-[160px]">
+                      <input
+                        type="number" min={0}
+                        value={form.stok_s}
+                        onChange={(e) => setForm({ ...form, stok_s: e.target.value })}
+                        placeholder="0"
+                        className="w-full bg-[#f8fafc] border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all"
+                      />
+                      <p className="text-[11px] text-slate-400 mt-1">{t({ ID: 'Stok total — pelanggan tidak memilih ukuran', EN: 'Total stock — customers don\'t pick a size' })}</p>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
+                      {MERCH_SIZES.map((s) => (
+                        <div key={s}>
+                          <span className="block text-[11px] text-slate-500 mb-1 font-bold">{s}</span>
+                          <input type="number" min={0} value={form[sizeColumn(s)]} onChange={(e) => setForm({ ...form, [sizeColumn(s)]: e.target.value })}
+                            placeholder="0"
+                            className="w-full bg-[#f8fafc] border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div><label className="block text-xs font-semibold text-slate-700 mb-1.5">{t({ ID: 'Band', EN: 'Band' })}</label>
                   <select value={form.id_band} onChange={(e) => setForm({ ...form, id_band: e.target.value })}
                     className="w-full bg-[#f8fafc] border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 focus:outline-none focus:bg-white focus:border-blue-600 focus:ring-2 focus:ring-blue-100 transition-all">
@@ -646,17 +695,26 @@ export default function SuperAdminMerchandisePage() {
                         <td className="px-5 py-4 text-slate-600 text-xs">{p.band?.nama_band || '-'}</td>
                         <td className="px-5 py-4 text-slate-900 font-semibold">{formatRupiah(Number(p.harga))}</td>
                         <td className="px-5 py-4">
-                          <div className="flex gap-1">
-                            {MERCH_SIZES.map((s) => (
-                              <SizeStockCell
-                                key={s}
-                                label={s}
-                                value={Number(p[sizeColumn(s)] ?? 0)}
-                                disabled={readOnly}
-                                onSave={(v) => handleUpdateStok(p, sizeColumn(s) as 'stok_s' | 'stok_m' | 'stok_l' | 'stok_xl' | 'stok_xxl', v)}
-                              />
-                            ))}
-                          </div>
+                          {isFreeSizeProduct(p as unknown as Record<string, unknown>) ? (
+                            <SizeStockCell
+                              label={t({ ID: 'Stok', EN: 'Stock' })}
+                              value={Number(p.stok_s ?? 0)}
+                              disabled={readOnly}
+                              onSave={(v) => handleUpdateStok(p, 'stok_s', v)}
+                            />
+                          ) : (
+                            <div className="flex gap-1">
+                              {MERCH_SIZES.map((s) => (
+                                <SizeStockCell
+                                  key={s}
+                                  label={s}
+                                  value={Number(p[sizeColumn(s)] ?? 0)}
+                                  disabled={readOnly}
+                                  onSave={(v) => handleUpdateStok(p, sizeColumn(s) as 'stok_s' | 'stok_m' | 'stok_l' | 'stok_xl' | 'stok_xxl', v)}
+                                />
+                              ))}
+                            </div>
+                          )}
                         </td>
                         <td className="px-5 py-4 text-slate-600">{terjual}</td>
                         <td className="px-5 py-4 font-bold text-blue-600">{formatRupiah(Number(p.harga) * terjual)}</td>

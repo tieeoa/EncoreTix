@@ -3,6 +3,7 @@ import { getServerSupabase } from '../../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay, getActiveEvent } from '../../../../lib/events'
 import { sendMerchEmailForOrder } from '../../../../lib/merchSender'
 import { resolveMerchGroup, buildMerchGroupData } from '../../../../lib/merchGroup'
+import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../../lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
 
@@ -10,9 +11,13 @@ export const dynamic = 'force-dynamic'
 // Lihat pesanan merch berdasarkan kode pengambilan / pickup code
 // (bisa berisi 1 item atau beberapa item dalam satu kelompok).
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Rate limit: maks 30 lookup per menit per IP
+  const rl = checkRateLimit(`merch-lookup:${getClientIp(request)}`, { max: 30, windowMs: 60_000 })
+  if (!rl.allowed) return rateLimitResponse(rl.resetAt)
+
   try {
     const { id } = await params
     const supabase = getServerSupabase()
@@ -40,6 +45,10 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  // Rate limit: maks 20 pickup attempt per menit per IP
+  const rl = checkRateLimit(`merch-pickup:${getClientIp(request)}`, { max: 20, windowMs: 60_000 })
+  if (!rl.allowed) return rateLimitResponse(rl.resetAt)
+
   try {
     const { id } = await params
     const body = await request.json()

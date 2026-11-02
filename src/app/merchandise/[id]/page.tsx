@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import { useLang } from '@/lib/i18n'
-import { MERCH_SIZES } from '@/app/lib/merchStok'
+import { MERCH_SIZES, FREE_SIZE, isFreeSizeProduct } from '@/app/lib/merchStok'
 import { friendlyError } from '@/app/lib/fetchError'
 import { MerchCartProvider, CartFab, useMerchCart, pushStoredCartItem } from '@/app/lib/merchCart'
 import AutoScrollTrack from '@/components/AutoScrollTrack'
@@ -106,14 +106,18 @@ function MerchandiseDetailContent() {
   }
 
   const handleAddCart = () => {
-    if (!product || !size || remainingSelected <= 0) return
-    addItem(product.id, size, qty)
-    flashToast(`${product.nama_merch} · ${size} · ${qty}`)
+    if (!product) return
+    const effectiveSize = isFree ? FREE_SIZE : size
+    if (!effectiveSize || remainingSelected <= 0) return
+    addItem(product.id, effectiveSize, qty)
+    flashToast(`${product.nama_merch}${isFree ? '' : ' · ' + effectiveSize} · ${qty}`)
   }
 
   const handleCheckoutNow = () => {
-    if (!product || !size || remainingSelected <= 0) return
-    pushStoredCartItem(product.id, size, qty)
+    if (!product) return
+    const effectiveSize = isFree ? FREE_SIZE : size
+    if (!effectiveSize || remainingSelected <= 0) return
+    pushStoredCartItem(product.id, effectiveSize, qty)
     router.push('/checkout/merch')
   }
 
@@ -133,8 +137,11 @@ function MerchandiseDetailContent() {
 
   const sisa = product.sisa_stok ?? {}
   const unavailable = product.status === 'nonaktif'
-  const soldOut = MERCH_SIZES.every((s) => (sisa[s] ?? 0) <= 0)
-  const remainingSelected = size ? (sisa[size] ?? 0) : 0
+  const isFree = isFreeSizeProduct(product as unknown as Record<string, unknown>)
+  const soldOut = isFree
+    ? (sisa[FREE_SIZE] ?? 0) <= 0
+    : MERCH_SIZES.every((s) => (sisa[s] ?? 0) <= 0)
+  const remainingSelected = isFree ? (sisa[FREE_SIZE] ?? 0) : (size ? (sisa[size] ?? 0) : 0)
   const subtotal = Number(product.harga) * qty
   const gallery = photos
   const currImage = gallery[Math.min(activeImage, gallery.length - 1)] || null
@@ -243,32 +250,40 @@ function MerchandiseDetailContent() {
           {/* Ukuran */}
           {!soldOut && !unavailable && (
             <div className="mb-6">
-              <p className="text-xs font-semibold text-gray-700 mb-2">
-                {t({ ID: 'Ukuran', EN: 'Size' })} <span className="text-red-500">*</span>
-              </p>
-              <div className="flex gap-2 flex-wrap">
-                {MERCH_SIZES.map((s) => {
-                  const sisaSize = sisa[s] ?? 0
-                  return (
-                    <button
-                      key={s}
-                      type="button"
-                      disabled={sisaSize <= 0}
-                      onClick={() => { setSize(s); setQty(1) }}
-                      className={`min-w-12 h-11 px-3 rounded-lg border text-sm font-semibold transition-colors ${
-                        size === s ? 'bg-gradient-to-r from-indigo-600 to-violet-600 border-transparent text-white' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-400'
-                      } ${sisaSize <= 0 ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed hover:border-gray-200' : ''}`}
-                    >
-                      {s}
-                    </button>
-                  )
-                })}
-              </div>
+              {isFree ? (
+                <p className="text-xs text-gray-500 mb-2 bg-gray-50 rounded-lg px-3 py-2">
+                  {t({ ID: '✓ Produk ini tidak memiliki pilihan ukuran', EN: '✓ This product has no size options' })}
+                </p>
+              ) : (
+                <>
+                  <p className="text-xs font-semibold text-gray-700 mb-2">
+                    {t({ ID: 'Ukuran', EN: 'Size' })} <span className="text-red-500">*</span>
+                  </p>
+                  <div className="flex gap-2 flex-wrap">
+                    {MERCH_SIZES.map((s) => {
+                      const sisaSize = sisa[s] ?? 0
+                      return (
+                        <button
+                          key={s}
+                          type="button"
+                          disabled={sisaSize <= 0}
+                          onClick={() => { setSize(s); setQty(1) }}
+                          className={`min-w-12 h-11 px-3 rounded-lg border text-sm font-semibold transition-colors ${
+                            size === s ? 'bg-gradient-to-r from-indigo-600 to-violet-600 border-transparent text-white' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-400'
+                          } ${sisaSize <= 0 ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed hover:border-gray-200' : ''}`}
+                        >
+                          {s}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </>
+              )}
             </div>
           )}
 
           {/* Qty */}
-          {!soldOut && !unavailable && size && remainingSelected > 0 && (
+          {!soldOut && !unavailable && (isFree || size) && remainingSelected > 0 && (
             <div className="mb-6">
               <p className="text-xs font-semibold text-gray-700 mb-2">{t({ ID: 'Jumlah', EN: 'Quantity' })}</p>
               <div className="flex items-center border border-gray-200 rounded-lg w-fit">

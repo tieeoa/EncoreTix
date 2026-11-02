@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay, getActiveEvent } from '../../../lib/events'
 import { sendTicketEmailForBooking } from '../../../lib/ticketSender'
+import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../lib/rateLimit'
 
 export const dynamic = 'force-dynamic'
 
@@ -43,9 +44,13 @@ async function getPemilikTiket(
 // GET /api/transactions/:bookingCode
 // Melihat detail pesanan tiket berdasarkan kode booking.
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ bookingCode: string }> }
 ) {
+  // Rate limit: maks 30 lookup per menit per IP
+  const rl = checkRateLimit(`lookup:${getClientIp(request)}`, { max: 30, windowMs: 60_000 })
+  if (!rl.allowed) return rateLimitResponse(rl.resetAt)
+
   try {
     const { bookingCode } = await params
     const { bookingCode: baseCode, ticketIndex } = parseTicketCode(decodeURIComponent(bookingCode))
@@ -84,6 +89,10 @@ export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ bookingCode: string }> }
 ) {
+  // Rate limit: maks 20 check-in attempt per menit per IP
+  const rl = checkRateLimit(`checkin:${getClientIp(request)}`, { max: 20, windowMs: 60_000 })
+  if (!rl.allowed) return rateLimitResponse(rl.resetAt)
+
   try {
     const { bookingCode } = await params
     const { bookingCode: baseCode, ticketIndex } = parseTicketCode(decodeURIComponent(bookingCode))

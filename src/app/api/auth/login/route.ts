@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     const token = Buffer.from(`${user.id}:${user.role}:${Date.now()}`).toString('base64')
     return NextResponse.json({ data: { token, id: user.id, nama: user.nama, username: user.username, role: user.role } })
   } catch (err) {
+    console.error('Login error:', err)
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
     return NextResponse.json({ error: message }, { status: 500 })
   }

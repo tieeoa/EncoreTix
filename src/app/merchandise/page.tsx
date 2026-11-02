@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useLang } from '@/lib/i18n'
-import { MERCH_SIZES } from '@/app/lib/merchStok'
+import { MERCH_SIZES, FREE_SIZE, isFreeSizeProduct } from '@/app/lib/merchStok'
 import { friendlyError } from '@/app/lib/fetchError'
 import { MerchCartProvider, CartFab, useMerchCart } from '@/app/lib/merchCart'
 
@@ -44,7 +44,10 @@ function formatRupiah(n: number) {
 function MerchCard({ p, delay, onBuy }: { p: MerchItem; delay: number; onBuy?: (p: MerchItem) => void }) {
   const { t } = useLang()
   const inactive = p.status === 'nonaktif'
-  const soldOut = MERCH_SIZES.reduce((acc, s) => acc + (p.sisa_stok?.[s] ?? 0), 0) <= 0
+  const isFree = isFreeSizeProduct(p as unknown as Record<string, unknown>)
+  const soldOut = isFree
+    ? (p.sisa_stok?.[FREE_SIZE] ?? 0) <= 0
+    : MERCH_SIZES.reduce((acc, s) => acc + (p.sisa_stok?.[s] ?? 0), 0) <= 0
   return (
     <Link
       href={`/merchandise/${p.id}`}
@@ -161,10 +164,11 @@ function MerchandisePageContent() {
   }
 
   const handleBuy = (p: MerchItem) => {
-    const size = MERCH_SIZES.find((s) => (p.sisa_stok?.[s] ?? 0) > 0)
+    const isFree = isFreeSizeProduct(p as unknown as Record<string, unknown>)
+    const size = isFree ? FREE_SIZE : MERCH_SIZES.find((s) => (p.sisa_stok?.[s] ?? 0) > 0)
     if (!size) return
     addItem(p.id, size, 1)
-    setToast(`${p.nama_merch} · ${size}`)
+    setToast(isFree ? p.nama_merch : `${p.nama_merch} · ${size}`)
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
     toastTimer.current = window.setTimeout(() => setToast(''), 2200)
   }

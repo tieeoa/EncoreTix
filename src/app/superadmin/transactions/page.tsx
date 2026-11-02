@@ -1,3 +1,4 @@
+
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -170,7 +171,7 @@ export default function SuperAdminTransactionsPage() {
           const earliest = group.map((m) => m.tanggal_pesan).filter(Boolean).sort()[0] || first.tanggal_pesan
           const metode = group.map((m) => m.metode_pembayaran).find((v) => !!v) || null
           return {
-            id: key,
+            id: first.id,
             tipe: 'merch',
             kode: key,
             nama: first.customers?.nama || '-',

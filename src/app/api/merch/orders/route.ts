@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { expireExpiredPendingOrders } from '../../../lib/expireOrders'
-import { MERCH_SIZES, sizeColumn, type MerchSize } from '../../../lib/merchStok'
+import { MERCH_SIZES, sizeColumn, type MerchSize, FREE_SIZE, FREE_SIZE_SENTINEL, isFreeSizeProduct } from '../../../lib/merchStok'
 import {
   ADMIN_FEE_RATE,
   generateKodePesanan,
@@ -34,17 +34,21 @@ interface CreateMerchOrderBody {
   ukuran?: string
 }
 
-function normalizeUkuran(u: string | undefined | null): MerchSize | null {
+function normalizeUkuran(u: string | undefined | null, productRec?: Record<string, unknown>): MerchSize | typeof FREE_SIZE | null {
+  // Produk tanpa ukuran otomatis dapat FREE
+  if (productRec && isFreeSizeProduct(productRec)) return FREE_SIZE
+  if (u === FREE_SIZE) return FREE_SIZE
   return u && MERCH_SIZES.includes(u.toUpperCase() as MerchSize)
     ? (u.toUpperCase() as MerchSize)
     : null
 }
 
 // Validasi stok online: sisa = stok_<ukuran> - qty pesanan 'berhasil'.
+// Untuk produk FREE_SIZE, cek stok_s dikurangi pesanan dengan ukuran 'FREE'.
 async function checkStock(
   supabase: ReturnType<typeof getServerSupabase>,
   idMerch: string,
-  ukuran: MerchSize
+  ukuran: MerchSize | typeof FREE_SIZE
 ): Promise<number> {
   const { data: merch, error: merchError } = await supabase
     .from('merchandise')
@@ -53,7 +57,15 @@ async function checkStock(
     .single()
   if (merchError || !merch) return -1
   if (merch.status === 'nonaktif') return -2
-  const cap = Number((merch as Record<string, unknown>)[sizeColumn(ukuran)] ?? 0)
+
+  let cap: number
+  if (ukuran === FREE_SIZE) {
+    // Produk free size: stok total ada di stok_s, sentinel di stok_xxl
+    if (Number(merch.stok_xxl) !== FREE_SIZE_SENTINEL) return -3 // bukan produk FREE
+    cap = Number(merch.stok_s ?? 0)
+  } else {
+    cap = Number((merch as Record<string, unknown>)[sizeColumn(ukuran)] ?? 0)
+  }
   const { data: soldRows } = await supabase
     .from('pesanan_merchandise')
     .select('jumlah')
@@ -88,7 +100,64 @@ export async function POST(request: Request) {
 
     const supabase = getServerSupabase()
 
-    // Cari atau buat customer
+    // Validasi setiap item: ukuran, status produk, stok.
+    // Validasi sengaja dilakukan SEBELUM membuat customer agar pesanan yang
+    // gagal (stok habis / produk ditutup) tidak meninggalkan customer yatim.
+    const prepared: {
+      id_merch: string
+      jumlah: number
+      ukuran: MerchSize | typeof FREE_SIZE
+      itemTotal: number
+    }[] = []
+    let totalHarga = 0
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i]
+      if (!item.id_merch || !item.jumlah || item.jumlah < 1) {
+        return NextResponse.json({
+          error: `Item ke-${i + 1}: pilih produk dan jumlah yang valid`,
+        }, { status: 400 })
+      }
+      const { data: merchData } = await supabase
+        .from('merchandise')
+        .select('id, status, harga, stok_s, stok_m, stok_l, stok_xl, stok_xxl')
+        .eq('id', item.id_merch)
+        .single()
+      const merchRec = merchData as Record<string, unknown> | null
+
+      const ukuran = normalizeUkuran(item.ukuran, merchRec ?? undefined)
+      if (!ukuran) {
+        return NextResponse.json({
+          error: `Item ke-${i + 1}: pilih ukuran merchandise`,
+        }, { status: 400 })
+      }
+
+      const remaining = await checkStock(supabase, item.id_merch, ukuran)
+      if (remaining === -1) {
+        return NextResponse.json({ error: `Produk pada item ke-${i + 1} tidak ditemukan` }, { status: 404 })
+      }
+      if (remaining === -2) {
+        return NextResponse.json({ error: 'Penjualan merchandise sedang ditutup' }, { status: 400 })
+      }
+      if (item.jumlah > remaining) {
+        return NextResponse.json(
+          { error: `Item ke-${i + 1}: stok ukuran ${ukuran} tidak mencukupi (sisa: ${remaining})` },
+          { status: 400 }
+        )
+      }
+
+      const subtotal = Number(merchData?.harga ?? 0) * item.jumlah
+      const itemTotal = subtotal + Math.round(subtotal * ADMIN_FEE_RATE)
+      totalHarga += itemTotal
+
+      prepared.push({
+        id_merch: item.id_merch,
+        jumlah: item.jumlah,
+        ukuran,
+        itemTotal,
+      })
+    }
+
+    // Cari atau buat customer (baru setelah semua item valid).
     const { data: existingCustomer } = await supabase
       .from('customers')
       .select('id')
@@ -117,60 +186,18 @@ export async function POST(request: Request) {
     }
 
     const kodePesanan = generateKodePesanan()
-
-    // Validasi setiap item: ukuran, status produk, stok; lalu siapkan baris insert.
-    const rows: Record<string, unknown>[] = []
-    let totalHarga = 0
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      if (!item.id_merch || !item.jumlah || item.jumlah < 1) {
-        return NextResponse.json({
-          error: `Item ke-${i + 1}: pilih produk dan jumlah yang valid`,
-        }, { status: 400 })
-      }
-      const ukuran = normalizeUkuran(item.ukuran)
-      if (!ukuran) {
-        return NextResponse.json({
-          error: `Item ke-${i + 1}: pilih ukuran merchandise`,
-        }, { status: 400 })
-      }
-
-      const remaining = await checkStock(supabase, item.id_merch, ukuran)
-      if (remaining === -1) {
-        return NextResponse.json({ error: `Produk pada item ke-${i + 1} tidak ditemukan` }, { status: 404 })
-      }
-      if (remaining === -2) {
-        return NextResponse.json({ error: 'Penjualan merchandise sedang ditutup' }, { status: 400 })
-      }
-      if (item.jumlah > remaining) {
-        return NextResponse.json(
-          { error: `Item ke-${i + 1}: stok ukuran ${ukuran} tidak mencukupi (sisa: ${remaining})` },
-          { status: 400 }
-        )
-      }
-
-      const { data: merch } = await supabase
-        .from('merchandise')
-        .select('harga')
-        .eq('id', item.id_merch)
-        .single()
-      const subtotal = Number(merch?.harga ?? 0) * item.jumlah
-      const itemTotal = subtotal + Math.round(subtotal * ADMIN_FEE_RATE)
-      totalHarga += itemTotal
-
-      rows.push({
-        id_customer: customerId,
-        id_merch: item.id_merch,
-        jumlah: item.jumlah,
-        ukuran: ukuran,
-        alamat: body.alamat || null,
-        total_harga: itemTotal,
-        kode_pengambilan: generateKodePengambilan(),
-        kode_pesanan: kodePesanan,
-        status_bayar: 'pending',
-        status_pengambilan: 'belum_diambil',
-      })
-    }
+    const rows: Record<string, unknown>[] = prepared.map((p) => ({
+      id_customer: customerId,
+      id_merch: p.id_merch,
+      jumlah: p.jumlah,
+      ukuran: p.ukuran,
+      alamat: body.alamat || null,
+      total_harga: p.itemTotal,
+      kode_pengambilan: generateKodePengambilan(),
+      kode_pesanan: kodePesanan,
+      status_bayar: 'pending',
+      status_pengambilan: 'belum_diambil',
+    }))
 
     const { data: inserted, error: orderError } = await supabase
       .from('pesanan_merchandise')
