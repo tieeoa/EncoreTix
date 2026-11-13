@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../../lib/supabaseClient'
 import { generateTicketPdf, type TicketPdfData } from '../../../../lib/ticketPdf'
 import { getEventById, formatEventDisplay } from '../../../../lib/events'
+import { mergeHolder, parseJsonArray, resolvePemesan, type PartySnapshot } from '../../../../lib/orderSnapshot'
 
 export const dynamic = 'force-dynamic'
 
@@ -38,10 +39,20 @@ export async function GET(
       return NextResponse.json({ error: 'Tiket tidak ditemukan' }, { status: 404 })
     }
 
+    // E-tiket hanya boleh diunduh setelah pembayaran benar-benar lunas.
+    if (pesanan.status_bayar !== 'berhasil') {
+      return NextResponse.json(
+        { error: 'Tiket belum lunas. E-tiket tersedia setelah pembayaran berhasil.' },
+        { status: 403 }
+      )
+    }
+
     const event = await getEventById(supabase, pesanan.tiket?.id_event)
     const eventDisplay = formatEventDisplay(event)
 
-    let owner = pesanan.customers
+    const pemesan = resolvePemesan(pesanan, pesanan.customers)
+    const pemilikSnaps = parseJsonArray<PartySnapshot>(pesanan.pemilik_data)
+    let owner = pemesan
     if (ticketIndex != null) {
       if (ticketIndex < 1 || ticketIndex > pesanan.jumlah) {
         return NextResponse.json({ error: 'Tiket tidak ditemukan' }, { status: 404 })
@@ -51,8 +62,12 @@ export async function GET(
           .from('customers')
           .select('id, nama, email, no_hp, no_identitas, jenis_identitas, jenis_kelamin, usia')
           .in('id', pesanan.pemilik_ids)
-        const byId = new Map((ownersData ?? []).map((c) => [c.id, c]))
-        owner = byId.get(pesanan.pemilik_ids[ticketIndex - 1]) || pesanan.customers
+        const byId = new Map((ownersData ?? []).map((c) => [c.id, c as PartySnapshot]))
+        owner = mergeHolder(
+          pemilikSnaps[ticketIndex - 1],
+          byId.get(pesanan.pemilik_ids[ticketIndex - 1]),
+          pemesan
+        )
       }
     }
 
@@ -61,13 +76,13 @@ export async function GET(
       jumlah: ticketIndex != null ? 1 : pesanan.jumlah,
       kategori: pesanan.tiket?.kategori || 'TIKET',
       harga: Number(pesanan.tiket?.harga ?? 0),
-      nama: owner?.nama || '-',
-      email: owner?.email || '-',
-      no_hp: owner?.no_hp,
-      no_identitas: owner?.no_identitas,
-      jenis_identitas: owner?.jenis_identitas,
-      jenis_kelamin: owner?.jenis_kelamin,
-      usia: owner?.usia,
+      nama: owner.nama || '-',
+      email: owner.email || '-',
+      no_hp: owner.no_hp,
+      no_identitas: owner.no_identitas,
+      jenis_identitas: owner.jenis_identitas,
+      jenis_kelamin: owner.jenis_kelamin,
+      usia: owner.usia,
       event: eventDisplay,
     }
 

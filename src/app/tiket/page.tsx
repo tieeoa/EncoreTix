@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
 import StickyBottomBar from '@/components/StickyBottomBar'
+import { clearPaymentCountdown } from '../lib/paymentTimer'
 
 interface TicketItem {
   id: string
@@ -35,6 +36,13 @@ export default function TicketListPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   useEffect(() => {
+    // Bersihkan sesi pemesanan sebelumnya jika user kembali ke halaman tiket
+    clearPaymentCountdown()
+    try {
+      localStorage.removeItem('encoretix_checkout_tiket_data')
+      sessionStorage.removeItem('encoretix_checkout_tiket_data')
+    } catch {}
+
     fetch('/api/tickets')
       .then((r) => r.json())
       .then((res) => {

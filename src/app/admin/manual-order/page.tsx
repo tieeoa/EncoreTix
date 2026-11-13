@@ -331,7 +331,7 @@ export default function AdminManualOrderPage() {
         loadRecent()
       } else {
         router.push(
-          `/payment/detail?booking=${encodeURIComponent(result.data.booking_id)}&method=${encodeURIComponent(metode)}&admin=1`
+          `/payment?booking=${encodeURIComponent(result.data.booking_id)}`
         )
       }
     } catch (err) {

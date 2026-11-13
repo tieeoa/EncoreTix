@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { resolvePemesan } from './orderSnapshot'
 
 export const ADMIN_FEE_RATE = 0.04
 
@@ -9,7 +10,7 @@ export type MerchOrderRow = Record<string, any>
 // Kode kelompok pesanan (kode_pesanan). Dibagikan oleh semua baris item
 // dalam satu checkout. Dipakai sebagai kode pengambilan yang tampil ke pembeli.
 export function generateKodePesanan(): string {
-  return `PESANAN-${randomCode()}`
+  return `EMRC-${randomCode()}`
 }
 
 // Kode unik per baris item (tetap wajib unik di kolom kode_pengambilan).
@@ -41,7 +42,7 @@ export async function resolveMerchGroup(
   const { data, error } = await supabase
     .from('pesanan_merchandise')
     .select(
-      '*, customers(nama, email, no_hp, usia, jenis_kelamin, no_identitas), merchandise(id_event, nama_merch, harga, foto, kategori)'
+      '*, customers(nama, email, no_hp, usia, jenis_kelamin, no_identitas, jenis_identitas), merchandise(id_event, nama_merch, harga, foto, kategori)'
     )
     .or(`kode_pesanan.eq.${safe},kode_pengambilan.eq.${safe}`)
     .order('tanggal_pesan', { ascending: true })
@@ -88,6 +89,7 @@ export interface MerchGroupData {
     usia: number | null
     jenis_kelamin: string | null
     no_identitas: string | null
+    jenis_identitas: string | null
   } | null
   items: MerchGroupItem[]
 }
@@ -114,6 +116,10 @@ export function buildMerchGroupData(rows: MerchOrderRow[], groupCode: string): M
   const adminFee = Math.max(0, totalHarga - subtotal)
   const jumlahTotal = rows.reduce((acc, r) => acc + Number(r.jumlah ?? 0), 0)
 
+  // Data pemesan memakai snapshot pesanan agar e-merch/dashboard konsisten
+  // dengan isian checkout, bukan nama lama pada tabel customers.
+  const pemesan = resolvePemesan(first, first.customers)
+
   return {
     kode_pesanan: groupCode,
     kode_pengambilan: groupCode,
@@ -126,7 +132,15 @@ export function buildMerchGroupData(rows: MerchOrderRow[], groupCode: string): M
     status_pengambilan: first.status_pengambilan || 'belum_diambil',
     tanggal_pesan: first.tanggal_pesan || null,
     alamat: first.alamat || null,
-    customers: first.customers || null,
+    customers: {
+      nama: pemesan.nama,
+      email: pemesan.email,
+      no_hp: pemesan.no_hp,
+      usia: pemesan.usia,
+      jenis_kelamin: pemesan.jenis_kelamin,
+      no_identitas: pemesan.no_identitas,
+      jenis_identitas: pemesan.jenis_identitas,
+    },
     items,
   }
 }

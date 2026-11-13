@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { usePaymentCountdown } from '../../lib/paymentTimer'
+import { usePaymentCountdown, clearPaymentCountdown } from '../../lib/paymentTimer'
 import PaymentTimerBanner from '@/components/PaymentTimerBanner'
 import PaymentStatusModal from '@/components/PaymentStatusModal'
 import StickyBottomBar from '@/components/StickyBottomBar'
@@ -87,6 +87,31 @@ const IDENTITAS_OPTIONS = ['KTP', 'SIM', 'Kartu Pelajar', 'Paspor']
 
 const FORM_STORAGE_KEY = 'encoretix_checkout_merch_data'
 
+function safeGetStorage(key: string): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return localStorage.getItem(key) || sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetStorage(key: string, value: string) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(key, value)
+    sessionStorage.setItem(key, value)
+  } catch {}
+}
+
+function safeRemoveStorage(key: string) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(key)
+    sessionStorage.removeItem(key)
+  } catch {}
+}
+
 function formatRupiah(n: number) {
   return 'Rp ' + n.toLocaleString('id-ID')
 }
@@ -123,10 +148,11 @@ function validatePemesan(p: PemesanData, t: (x: { ID: string; EN: string }) => s
     return msg('Format email tidak valid.', 'Invalid email format.')
   }
   const wa = p.whatsapp.replace(/[\s-]/g, '')
-  if (!/^(?:\+?62|0)8\d{8,11}$/.test(wa)) {
+  // Terima: 81234567890, +6281234567890, 081234567890
+  if (!/^(?:(?:\+?62|0)8\d{8,11}|8\d{8,11})$/.test(wa)) {
     return msg(
-      'Nomor WhatsApp tidak valid. Contoh: 081234567890.',
-      'Invalid WhatsApp number. e.g. 081234567890.'
+      'Nomor WhatsApp tidak valid. Contoh: 81234567890, 081234567890, atau +6281234567890.',
+      'Invalid WhatsApp number. e.g. 81234567890.'
     )
   }
   if (!p.kecamatan) {
@@ -277,57 +303,40 @@ function MerchCheckoutContent() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
 
-  const { remaining, isExpired } = usePaymentCountdown(true, false)
+  const { remaining, isExpired } = usePaymentCountdown(false, false)
+
+  const [isRestored, setIsRestored] = useState(false)
+
+  const handleBack = () => {
+    clearPaymentCountdown()
+    safeRemoveStorage(FORM_STORAGE_KEY)
+    router.back()
+  }
 
   const [pemesan, setPemesan] = useState<PemesanData>(EMPTY_PEMESAN)
 
-  // Data form dikembalikan dari sessionStorage hanya setelah muat, supaya data
-  // tersimpan tidak ditimpa data kosong saat mount.
-  const restoredRef = useRef(false)
-
   useEffect(() => {
-    let saved: string | null = null
     try {
-      saved = sessionStorage.getItem(FORM_STORAGE_KEY)
-    } catch {
-      restoredRef.current = true
-      return
-    }
-    if (!saved) {
-      restoredRef.current = true
-      return
-    }
-    let parsed: { pemesan?: Partial<PemesanData>; lines?: CartLine[] } | null = null
-    try {
-      parsed = JSON.parse(saved)
-    } catch {
-      restoredRef.current = true
-      return
-    }
-    if (!parsed || typeof parsed !== 'object') {
-      restoredRef.current = true
-      return
-    }
-    const timer = setTimeout(() => {
-      if (parsed.pemesan) {
-        setPemesan((prev) => ({ ...prev, ...parsed.pemesan }))
+      const saved = safeGetStorage(FORM_STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.pemesan) {
+            setPemesan((prev) => ({ ...prev, ...parsed.pemesan }))
+          }
+          if (Array.isArray(parsed.lines) && parsed.lines.length > 0) {
+            setLines(parsed.lines)
+          }
+        }
       }
-      if (Array.isArray(parsed.lines) && parsed.lines.length > 0) {
-        setLines(parsed.lines)
-      }
-      restoredRef.current = true
-    }, 0)
-    return () => clearTimeout(timer)
+    } catch {}
+    setIsRestored(true)
   }, [])
 
   useEffect(() => {
-    if (!restoredRef.current) return
-    try {
-      sessionStorage.setItem(FORM_STORAGE_KEY, JSON.stringify({ pemesan, lines }))
-    } catch {
-      // abaikan jika storage tidak tersedia
-    }
-  }, [pemesan, lines])
+    if (!isRestored) return
+    safeSetStorage(FORM_STORAGE_KEY, JSON.stringify({ pemesan, lines }))
+  }, [isRestored, pemesan, lines])
 
   useEffect(() => {
     fetch('/api/merchandise')
@@ -457,11 +466,8 @@ function MerchCheckoutContent() {
       })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal membuat pesanan', EN: 'Failed to create order' }))
-      try {
-        sessionStorage.removeItem(FORM_STORAGE_KEY)
-      } catch {
-        // ignore
-      }
+      // Catatan: FORM_STORAGE_KEY sengaja TIDAK dihapus di sini agar jika pemesan
+      // menekan tombol 'Kembali' dari halaman pembayaran, isian form tidak hilang.
       clearStoredCart()
       router.push(`/payment/merch?booking=${encodeURIComponent(result.data.kode_pesanan)}`)
     } catch (err) {
@@ -480,7 +486,7 @@ function MerchCheckoutContent() {
 
       <div className="max-w-6xl mx-auto px-4 py-10">
         <div className="mb-8">
-          <button onClick={() => router.back()} className="text-sm font-medium text-gray-600 mb-6 hover:text-gray-900">
+          <button onClick={handleBack} className="text-sm font-medium text-gray-600 mb-6 hover:text-gray-900">
             &lt; {t({ ID: 'Kembali', EN: 'Back' })}
           </button>
           <h1 className="text-2xl font-bold text-gray-900">{t({ ID: 'Detail Pemesanan', EN: 'Order Details' })}</h1>
@@ -644,14 +650,14 @@ function MerchCheckoutContent() {
                     value={pemesan.email}
                     onChange={(e) => setPemesan({ ...pemesan, email: e.target.value })}
                   />
-                  <Input
-                    label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })}
-                    required
-                    type="tel"
-                    prefixIcon={<span className="text-gray-500 text-xs font-medium flex items-center gap-1"><span className="text-red-500">🇮🇩</span> +62</span>}
-                    value={pemesan.whatsapp}
-                    onChange={(e) => setPemesan({ ...pemesan, whatsapp: e.target.value })}
-                  />
+<Input
+  label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })}
+  required
+  type="tel"
+  prefixIcon={<span className="text-gray-500 text-xs font-medium flex items-center gap-1"><span className="text-red-500">🇮🇩</span> +62</span>}
+  value={pemesan.whatsapp}
+  onChange={(e) => setPemesan({ ...pemesan, whatsapp: e.target.value })}
+/>
                 </div>
               </div>
 

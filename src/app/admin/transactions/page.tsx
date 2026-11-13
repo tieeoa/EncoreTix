@@ -19,9 +19,12 @@ interface TiketTransaksi {
   status_bayar: string
   tanggal_pesan: string
   metode_pembayaran?: string | null
+  nama_pemesan?: string | null
+  email_pemesan?: string | null
   customers: { nama: string; email: string } | null
   tiket: { kategori: string; harga: number } | null
   voucher: { kode_voucher: string; nominal_diskon: number } | null
+  pembayaran: { metode_pembayaran?: string | null; total_bayar?: number | null } | null
 }
 
 type Row = {
@@ -113,12 +116,17 @@ export default function AdminTransactionsPage() {
         const tiketRows: Row[] = (tiketRes.data || []).map((tr: TiketTransaksi) => {
           const subtotal = Number(tr.tiket?.harga || 0) * tr.jumlah
           const diskon = Number(tr.voucher?.nominal_diskon || 0)
+          const paid = tr.pembayaran?.total_bayar
+          const total =
+            tr.status_bayar === 'berhasil' && paid != null
+              ? Number(paid)
+              : Math.max(0, subtotal - diskon)
           return {
             id: tr.id,
-            nama: tr.customers?.nama || '-',
-            email: tr.customers?.email || '-',
+            nama: tr.nama_pemesan || tr.customers?.nama || '-',
+            email: tr.email_pemesan || tr.customers?.email || '-',
             item: `${tr.tiket?.kategori || '-'} x${tr.jumlah}`,
-            total: Math.max(0, subtotal - diskon),
+            total,
             metode: labelMetode(tr.metode_pembayaran),
             status: tr.status_bayar === 'berhasil' ? 'berhasil' : tr.status_bayar === 'gagal' ? 'gagal' : 'pending',
             waktu: formatWaktu(tr.tanggal_pesan),

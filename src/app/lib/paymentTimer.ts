@@ -71,9 +71,14 @@ export function syncPaymentDeadline(serverStart?: string | number | null) {
 
 export function formatRemaining(ms: number) {
   const totalSec = Math.max(0, Math.ceil((Number.isFinite(ms) ? ms : 0) / 1000))
-  const m = Math.floor(totalSec / 60)
+  const h = Math.floor(totalSec / 3600)
+  const m = Math.floor((totalSec % 3600) / 60)
   const s = totalSec % 60
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+  const mm = String(m).padStart(2, '0')
+  const ss = String(s).padStart(2, '0')
+  // Tampilkan jam bila sisa waktu > 1 jam agar tidak muncul "420:00".
+  if (h > 0) return `${String(h).padStart(2, '0')}:${mm}:${ss}`
+  return `${mm}:${ss}`
 }
 
 export function formatDeadline(deadline: number) {
@@ -96,29 +101,35 @@ export function formatDeadline(deadline: number) {
 
 export function usePaymentCountdown(restartOnMount = false, redirectOnExpire = true) {
   const router = useRouter()
-  const [deadline, setDeadline] = useState(() => {
-    const existing = getPaymentDeadline()
-    if (restartOnMount || !existing) return startPaymentCountdown()
-    return existing
-  })
-  const [remaining, setRemaining] = useState(() =>
-    deadline > 0 ? Math.max(0, deadline - Date.now()) : PAYMENT_DURATION_MS
-  )
+  // Inisialisasi awal statis agar SSR dan initial client render identik (mencegah hydration mismatch)
+  const [deadline, setDeadline] = useState<number>(0)
+  const [remaining, setRemaining] = useState<number>(PAYMENT_DURATION_MS)
   const notifiedRef = useRef(false)
-  const isExpired = remaining <= 0
 
   useEffect(() => {
-    const update = () => {
-      const dl = getPaymentDeadline()
-      if (dl > 0) {
-        setDeadline((prev) => (prev !== dl ? dl : prev))
-        setRemaining(Math.max(0, dl - Date.now()))
+    // Sinkronkan saat mount di browser
+    const now = Date.now()
+    let dl = getPaymentDeadline()
+    if (restartOnMount || !dl || dl <= now) {
+      dl = startPaymentCountdown()
+    }
+    setDeadline(dl)
+    setRemaining(Math.max(0, dl - now))
+
+    const tick = () => {
+      const currentDl = getPaymentDeadline() || dl
+      const rem = Math.max(0, currentDl - Date.now())
+      setRemaining(rem)
+      if (rem <= 0) {
+        clearInterval(id)
       }
     }
-    update()
-    const id = setInterval(update, 1000)
+
+    const id = setInterval(tick, 1000)
     return () => clearInterval(id)
   }, [restartOnMount])
+
+  const isExpired = remaining <= 0
 
   useEffect(() => {
     if (!isExpired || notifiedRef.current) return

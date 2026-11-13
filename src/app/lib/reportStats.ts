@@ -122,17 +122,21 @@ any[] | null; error: { message: string } | null }
   // Metode pembayaran tiket tersimpan di tabel pembayaran (1:1 ke pesanan_tiket).
   // Order manual Tunai yang langsung lunas tidak punya baris pembayaran -> fallback 'Tunai'.
   const pesananIds = (pesananRes.data || []).map((p) => p.id)
-  const pembayaranByPesanan = new Map<string, { metode: string; tanggal: string | null }>()
+  const pembayaranByPesanan = new Map<string, { metode: string; tanggal: string | null; total: number }>()
   // .in() PostgREST dibatasi ~200 nilai, jadi ambil pembayaran per batch.
   for (let i = 0; i < pesananIds.length; i += 200) {
     const batch = pesananIds.slice(i, i + 200)
     const { data: payRows, error: payError } = await supabase
       .from('pembayaran')
-      .select('id_pesanan_tiket, metode_pembayaran, tanggal_bayar')
+      .select('id_pesanan_tiket, metode_pembayaran, tanggal_bayar, total_bayar')
       .in('id_pesanan_tiket', batch)
     if (payError) throw new Error(payError.message)
     for (const r of payRows || []) {
-      pembayaranByPesanan.set(r.id_pesanan_tiket as string, { metode: String(r.metode_pembayaran || ''), tanggal: (r.tanggal_bayar as string | null) || null })
+      pembayaranByPesanan.set(r.id_pesanan_tiket as string, {
+        metode: String(r.metode_pembayaran || ''),
+        tanggal: (r.tanggal_bayar as string | null) || null,
+        total: Number((r as { total_bayar?: number | string | null }).total_bayar || 0),
+      })
     }
   }
 
@@ -174,6 +178,8 @@ any[] | null; error: { message: string } | null }
   const revenueTiket = pesanans
     .filter((p) => p.status_bayar === 'berhasil')
     .reduce((s, p) => {
+      const paid = pembayaranByPesanan.get(p.id)
+      if (paid) return s + paid.total
       const tiket = tikets.find((t) => t.id === p.id_tiket)
       return s + (tiket ? Number(tiket.harga) * p.jumlah : 0)
     }, 0)
@@ -215,7 +221,9 @@ any[] | null; error: { message: string } | null }
       pay?.metode || (p.source === 'offline' ? 'Tunai' : 'Lainnya'),
       'Lainnya'
     )
-    addPay(metode, (tiketHargaById.get(p.id_tiket) ?? 0) * p.jumlah)
+    // Pakai nominal yang benar-benar dibayar bila ada (termasuk biaya admin);
+    // order manual tanpa baris pembayaran memakai harga tiket saat ini.
+    addPay(metode, pay ? pay.total : (tiketHargaById.get(p.id_tiket) ?? 0) * p.jumlah)
   }
   for (const m of merchOrders) {
     if (m.status_bayar !== 'berhasil') continue
@@ -230,7 +238,11 @@ any[] | null; error: { message: string } | null }
   const offlineOk = pesanans.filter((p) => p.source === 'offline' && p.status_bayar === 'berhasil')
   const onlineOk = pesanans.filter((p) => p.source !== 'offline' && p.status_bayar === 'berhasil')
   const sumTiketRevenue = (rows: typeof pesanans) =>
-    rows.reduce((s, p) => s + (tiketHargaById.get(p.id_tiket) ?? 0) * p.jumlah, 0)
+    rows.reduce((s, p) => {
+      const pay = pembayaranByPesanan.get(p.id)
+      if (pay) return s + pay.total
+      return s + (tiketHargaById.get(p.id_tiket) ?? 0) * p.jumlah
+    }, 0)
   const manualRevenue = sumTiketRevenue(offlineOk)
   const onlineRevenue = sumTiketRevenue(onlineOk) + revenueMerch
   const manualSummary: ManualSummary = {
@@ -303,7 +315,7 @@ any[] | null; error: { message: string } | null }
     if (!rawDate) continue
     const d = new Date(rawDate)
     if (Number.isNaN(d.getTime())) continue
-    const amount = (tiketHargaById.get(p.id_tiket) ?? 0) * p.jumlah
+    const amount = pay ? pay.total : (tiketHargaById.get(p.id_tiket) ?? 0) * p.jumlah
     const dk = dayKey(d)
     if (dailyLabel.has(dk)) sumToBucket(dailyMap, dk, 'tiket', amount)
     const wk = dayKey(mondayOf(d))
@@ -363,6 +375,14 @@ any[] | null; error: { message: string } | null }
             .filter((p) => p.id_tiket === t.id && p.status_bayar === 'berhasil')
             .reduce((s, p) => s + p.jumlah, 0)
         : t.kuota - t.sisa_kuota
+      // Pendapatan per kategori memakai nominal dibayar (bila ada), bukan harga
+      // tiket saat ini yang bisa berubah setelah penjualan.
+      const revenue = pesanans
+        .filter((p) => p.id_tiket === t.id && p.status_bayar === 'berhasil')
+        .reduce((s, p) => {
+          const pay = pembayaranByPesanan.get(p.id)
+          return s + (pay ? pay.total : Number(t.harga) * p.jumlah)
+        }, 0)
       return {
         id: t.id,
         kategori: t.kategori,
@@ -372,7 +392,7 @@ any[] | null; error: { message: string } | null }
         sisa: t.sisa_kuota,
         harga: Number(t.harga),
         persen: t.kuota > 0 ? Math.round((terjual / t.kuota) * 100) : 0,
-        revenue: Number(t.harga) * terjual,
+        revenue,
       }
     }),
     merchBreakdown: merches.map((m) => {
@@ -381,13 +401,16 @@ any[] | null; error: { message: string } | null }
         .reduce((s, ord) => s + ord.jumlah, 0)
       const stokPerMerch =
         (m.stok_s ?? 0) + (m.stok_m ?? 0) + (m.stok_l ?? 0) + (m.stok_xl ?? 0) + (m.stok_xxl ?? 0)
+      const revenue = merchOrders
+        .filter((ord) => ord.status_bayar === 'berhasil' && ord.id_merch === m.id)
+        .reduce((s, ord) => s + Number(ord.total_harga), 0)
       return {
         id: m.id,
         nama: m.nama_merch,
         harga: Number(m.harga),
         stok: stokPerMerch,
         terjual: sold,
-        revenue: Number(m.harga) * sold,
+        revenue,
       }
     }),
   }

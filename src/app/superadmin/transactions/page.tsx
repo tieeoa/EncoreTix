@@ -13,7 +13,7 @@ import { useSelectedEventStatus } from '@/lib/useEventStatus'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
 import { labelMetode } from '@/app/lib/paymentMethod'
-import { buildCsv, autoSaveCsv } from '@/app/lib/csv'
+import { buildExcelXml, autoSaveXls } from '@/app/lib/excel'
 import Toast from '@/components/Toast'
 import LoadingDots from '@/components/LoadingDots'
 
@@ -26,9 +26,12 @@ interface TiketTransaksi {
   status_check_in: string
   tanggal_pesan: string
   metode_pembayaran?: string | null
+  nama_pemesan?: string | null
+  email_pemesan?: string | null
   customers: { nama: string; email: string } | null
   tiket: { kategori: string; harga: number } | null
   voucher: { kode_voucher: string; nominal_diskon: number } | null
+  pembayaran: { metode_pembayaran?: string | null; total_bayar?: number | null } | null
 }
 
 interface MerchTransaksi {
@@ -42,6 +45,8 @@ interface MerchTransaksi {
   status_pengambilan: string
   tanggal_pesan: string
   metode_pembayaran?: string | null
+  nama_pemesan?: string | null
+  email_pemesan?: string | null
   customers: { nama: string; email: string } | null
   merchandise: { nama_merch: string; harga: number } | null
 }
@@ -115,8 +120,6 @@ export default function SuperAdminTransactionsPage() {
   const PAGE_SIZE = 10
   const [sendingId, setSendingId] = useState('')
   const [resendMsg, setResendMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [csvData, setCsvData] = useState<{ text: string; count: number; stamp: string } | null>(null)
-  const [copied, setCopied] = useState(false)
   const eventId = useSelectedEventId()
   const { finished: eventFinished } = useSelectedEventStatus()
   const readOnly = eventFinished
@@ -140,14 +143,21 @@ export default function SuperAdminTransactionsPage() {
         const tiketRows: Row[] = (tiketRes.data || []).map((tr: TiketTransaksi) => {
           const subtotal = Number(tr.tiket?.harga || 0) * tr.jumlah
           const diskon = Number(tr.voucher?.nominal_diskon || 0)
+          const paid = tr.pembayaran?.total_bayar
+          // Nominal yang benar-benar dibayar (termasuk biaya admin) dipakai untuk
+          // transaksi lunas; order manual tanpa baris pembayaran pakai subtotal.
+          const total =
+            tr.status_bayar === 'berhasil' && paid != null
+              ? Number(paid)
+              : Math.max(0, subtotal - diskon)
           return {
             id: tr.id,
             tipe: 'tiket',
             kode: tr.booking_id,
-            nama: tr.customers?.nama || '-',
-            email: tr.customers?.email || '-',
+            nama: tr.nama_pemesan || tr.customers?.nama || '-',
+            email: tr.email_pemesan || tr.customers?.email || '-',
             item: `${tr.tiket?.kategori || '-'} x${tr.jumlah}`,
-            total: Math.max(0, subtotal - diskon),
+            total,
             metode: labelMetode(tr.metode_pembayaran),
             status: tr.status_bayar === 'berhasil' ? 'berhasil' : tr.status_bayar === 'gagal' ? 'gagal' : 'pending',
             sumber: tr.source === 'offline' ? 'offline' : 'online',
@@ -174,8 +184,8 @@ export default function SuperAdminTransactionsPage() {
             id: first.id,
             tipe: 'merch',
             kode: key,
-            nama: first.customers?.nama || '-',
-            email: first.customers?.email || '-',
+            nama: first.nama_pemesan || first.customers?.nama || '-',
+            email: first.email_pemesan || first.customers?.email || '-',
             item: itemLabel,
             total: group.reduce((sum, m) => sum + Number(m.total_harga || 0), 0),
             metode: labelMetode(metode),
@@ -250,9 +260,8 @@ export default function SuperAdminTransactionsPage() {
 
   const totalRevenue = rows.filter((row) => row.status === 'berhasil').reduce((sum, row) => sum + row.total, 0)
 
-  // Ekspor CSV otomatis: file langsung tersimpan ke perangkat dengan data terbaru.
-  const exportCsv = () => {
-    if (rows.length === 0) return
+  // Data ekspor dipakai oleh fitur Export Excel.
+  const buildExportData = () => {
     const header = t({
       ID: 'Kode;Tipe;Nama;Email;Item;Total (Rp);Metode;Status;Sumber;Waktu',
       EN: 'Code;Type;Name;Email;Item;Total (Rp);Method;Status;Source;Time',
@@ -269,21 +278,15 @@ export default function SuperAdminTransactionsPage() {
       r.sumber || 'online',
       r.waktu,
     ])
-    const csv = buildCsv(header, data)
     const stamp = new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')
-    autoSaveCsv(`transaksi-encoretix-${stamp}.csv`, csv)
-    setCsvData({ text: csv, count: data.length, stamp })
+    return { header, data, stamp }
   }
 
-  const copyCsv = async () => {
-    if (!csvData) return
-    try {
-      await navigator.clipboard.writeText(csvData.text)
-      setCopied(true)
-      setTimeout(() => setCopied(false), 1500)
-    } catch {
-      setCopied(false)
-    }
+  // Ekspor Excel: kolom sudah terstruktur, langsung rapi saat dibuka.
+  const exportExcel = () => {
+    if (rows.length === 0) return
+    const { header, data, stamp } = buildExportData()
+    autoSaveXls(`transaksi-encoretix-${stamp}.xls`, buildExcelXml('Transaksi', header, data))
   }
 
   if (loading) {
@@ -320,15 +323,16 @@ export default function SuperAdminTransactionsPage() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <button
-                onClick={exportCsv}
+                type="button"
+                onClick={exportExcel}
                 disabled={rows.length === 0}
                 title={rows.length === 0 ? t({ ID: 'Belum ada data transaksi', EN: 'No transaction data yet' }) : undefined}
-                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold border transition-colors bg-white text-slate-700 border-slate-200 hover:text-blue-700 hover:border-blue-300 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold border transition-colors bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 hover:border-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.6 6.4a9 9 0 11-12.8 0M12 3v12" />
                 </svg>
-                {t({ ID: 'Export Data CSV', EN: 'Export CSV Data' })}
+                {t({ ID: 'Export Excel', EN: 'Export Excel' })}
               </button>
               <EventSelector />
             </div>
@@ -477,56 +481,6 @@ export default function SuperAdminTransactionsPage() {
             )}
           </div>
         </main>
-
-        {csvData && (
-          <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm"
-            onClick={() => setCsvData(null)}
-          >
-            <div
-              className="w-full max-w-2xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-slate-900">{t({ ID: 'Data CSV Transaksi', EN: 'Transaction CSV Data' })}</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    {csvData.count} {t({ ID: 'baris · otomatis tersimpan di perangkat · data terbaru saat tombol diklik', EN: 'rows · auto-saved to your device · latest data at the moment you click' })}
-                  </p>
-                </div>
-                <button
-                  onClick={() => setCsvData(null)}
-                  className="shrink-0 w-8 h-8 inline-flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                  </svg>
-                </button>
-              </div>
-              <pre className="max-h-[55vh] overflow-auto p-4 text-[11px] leading-relaxed font-mono text-slate-700 bg-slate-50 whitespace-pre select-all">{csvData.text}</pre>
-              <div className="px-5 py-3 border-t border-slate-100 flex items-center justify-end gap-2">
-                <button
-                  onClick={copyCsv}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold border text-slate-600 border-slate-200 hover:border-slate-300 transition-colors"
-                >
-                  {copied ? t({ ID: 'Tersalin', EN: 'Copied' }) : t({ ID: 'Salin', EN: 'Copy' })}
-                </button>
-                <button
-                  onClick={exportCsv}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold border text-blue-700 border-blue-200 bg-blue-50 hover:bg-blue-100 transition-colors"
-                >
-                  {t({ ID: 'Unduh Lagi', EN: 'Download Again' })}
-                </button>
-                <button
-                  onClick={() => setCsvData(null)}
-                  className="px-3 py-2 rounded-lg text-xs font-semibold bg-slate-900 text-white hover:bg-slate-800 transition-colors"
-                >
-                  {t({ ID: 'Tutup', EN: 'Close' })}
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
       </div>
     </div>
   )

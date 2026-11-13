@@ -8,6 +8,8 @@ import {
   generateKodePengambilan,
 } from '../../../lib/merchGroup'
 import { resolveEventId } from '../../../lib/events'
+import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
+import { parseJsonObject, type PartySnapshot } from '../../../lib/orderSnapshot'
 
 export const dynamic = 'force-dynamic'
 
@@ -186,8 +188,22 @@ export async function POST(request: Request) {
     }
 
     const kodePesanan = generateKodePesanan()
+    // Snapshot data pemesan per pesanan agar bukti pengambilan & dashboard
+    // konsisten dengan isian checkout (bukan nama lama pada tabel customers).
+    const pemesanData = {
+      nama: body.nama,
+      email: body.email,
+      no_hp: body.no_hp ?? null,
+      usia: body.usia ?? null,
+      no_identitas: body.no_identitas ?? null,
+      jenis_identitas: body.jenis_identitas ?? null,
+      jenis_kelamin: body.jenis_kelamin ?? null,
+    }
     const rows: Record<string, unknown>[] = prepared.map((p) => ({
       id_customer: customerId,
+      nama_pemesan: body.nama,
+      email_pemesan: body.email,
+      pemesan_data: pemesanData,
       id_merch: p.id_merch,
       jumlah: p.jumlah,
       ukuran: p.ukuran,
@@ -254,9 +270,46 @@ export async function GET(request: Request) {
 
     const { data, error } = await query
     if (error) throw new Error(error.message)
-    return NextResponse.json({ data })
+
+    // Auto-sync pesanan merch yang masih pending dengan Midtrans
+    const pendingMerch = (data || []).filter((r) => r.status_bayar === 'pending')
+    if (pendingMerch.length > 0) {
+      const distinctCodes = [...new Set(pendingMerch.map((r) => r.kode_pesanan || r.kode_pengambilan).filter(Boolean))]
+      await Promise.allSettled(
+        distinctCodes.slice(0, 5).map(async (code) => {
+          const synced = await syncOrderWithMidtrans(String(code))
+          if (synced && synced !== 'pending') {
+            ;(data || []).forEach((row) => {
+              if (row.kode_pesanan === code || row.kode_pengambilan === code) {
+                row.status_bayar = synced
+              }
+            })
+          }
+        })
+      )
+    }
+
+    return NextResponse.json({ data: withPemesanSnapshot(data || []) })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
     return NextResponse.json({ error: message }, { status: 500 })
   }
+}
+
+// Ganti nama/email pada relasi customers dengan snapshot pesanan agar daftar
+// transaksi (dashboard admin & superadmin) konsisten dengan isian checkout.
+function withPemesanSnapshot<T extends Record<string, unknown>>(rows: T[]): T[] {
+  return rows.map((r) => {
+    const snap = parseJsonObject<PartySnapshot>(r.pemesan_data)
+    const customers = r.customers as { nama?: string | null; email?: string | null } | null
+    if (!customers) return r
+    return {
+      ...r,
+      customers: {
+        ...customers,
+        nama: snap?.nama || (r.nama_pemesan as string | null) || customers.nama,
+        email: snap?.email || (r.email_pemesan as string | null) || customers.email,
+      },
+    }
+  })
 }

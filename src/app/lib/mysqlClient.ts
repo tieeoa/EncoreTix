@@ -31,6 +31,15 @@ function getPool(): Pool {
     dateStrings: ['DATE'],
     charset: 'utf8mb4',
   })
+
+  // Samakan timezone sesi MySQL dengan klien (UTC). Tanpa ini, kolom DATETIME
+  // ber-default CURRENT_TIMESTAMP tersimpan sebagai jam dinding server (WIB)
+  // tetapi dibaca mysql2 sebagai UTC, sehingga jam tampil meleset +7 jam.
+  // mysql2 tidak menyetel time_zone server sendiri, jadi lakukan per koneksi.
+  g.__encoretixMysqlPool.on('connection', (conn) => {
+    void conn.query("SET time_zone = '+00:00'")
+  })
+
   return g.__encoretixMysqlPool
 }
 

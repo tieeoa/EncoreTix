@@ -20,7 +20,9 @@ export async function sendMerchEmailForOrder(kode: string, opts?: { withPdf?: bo
     }
 
     const first = resolved.rows[0]
-    const cust = first.customers
+    const group = buildMerchGroupData(resolved.rows, resolved.groupCode)
+    // group.customers sudah memakai snapshot pesanan (nama/email sesuai checkout).
+    const cust = group.customers
     if (!cust?.email || !cust.email.includes('@')) {
       console.error(`[merch-email] Pesanan ${kode} tidak punya email valid`)
       return false
@@ -28,8 +30,6 @@ export async function sendMerchEmailForOrder(kode: string, opts?: { withPdf?: bo
 
     const event = await getEventById(supabase, first.merchandise?.id_event || null)
     const eventDisplay = formatEventDisplay(event)
-
-    const group = buildMerchGroupData(resolved.rows, resolved.groupCode)
 
     const pdfData: MerchPdfData = {
       kode_pengambilan: resolved.groupCode,

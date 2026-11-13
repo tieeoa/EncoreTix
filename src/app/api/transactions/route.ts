@@ -4,6 +4,8 @@ import { expireExpiredPendingOrders } from '../../lib/expireOrders'
 import { sendTicketEmailForBooking } from '../../lib/ticketSender'
 import { isTicketSalesClosed } from '../../lib/salesClosed'
 import { resolveEventId } from '../../lib/events'
+import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
+import { parseJsonArray, resolvePemesan, type PartySnapshot } from '../../lib/orderSnapshot'
 
 export const dynamic = 'force-dynamic'
 
@@ -20,7 +22,7 @@ export async function GET(request: Request) {
 
     let query = supabase
       .from('pesanan_tiket')
-      .select('*, customers(nama, email, no_hp), tiket(kategori, harga, id_event), voucher(kode_voucher, nominal_diskon), pembayaran(metode_pembayaran)')
+      .select('*, customers(nama, email, no_hp), tiket(kategori, harga, id_event), voucher(kode_voucher, nominal_diskon), pembayaran(metode_pembayaran, total_bayar)')
       .order('tanggal_pesan', { ascending: false })
       .limit(200)
 
@@ -46,6 +48,19 @@ export async function GET(request: Request) {
     const { data, error } = await query
     if (error) throw new Error(error.message)
 
+    // Auto-sync status pesanan online yang masih 'pending' dengan Midtrans
+    const pendingOnline = (data || []).filter((r) => r.status_bayar === 'pending' && r.source === 'online')
+    if (pendingOnline.length > 0) {
+      await Promise.allSettled(
+        pendingOnline.slice(0, 5).map(async (r) => {
+          const synced = await syncOrderWithMidtrans(r.booking_id)
+          if (synced && synced !== 'pending') {
+            r.status_bayar = synced
+          }
+        })
+      )
+    }
+
     // Sertakan nama pemilik tiap tiket (pemilik_ids) agar riwayat check-in
     // bisa tampil per tiket, bukan hanya nama pemesan yang sama berulang.
     const allOwnerIds = [...new Set((data || []).flatMap((r) => r.pemilik_ids || []))]
@@ -57,18 +72,28 @@ export async function GET(request: Request) {
         .in('id', allOwnerIds)
       ownerById = new Map((owners || []).map((o) => [o.id, { nama: o.nama }]))
     }
-    const withOwners = (data || []).map((r) => ({
-      ...r,
-      pemilik_tiket: (r.pemilik_ids || []).map((id: string) => ({
-        nama: ownerById.get(id)?.nama ?? null,
-      })),
-      // Metode pembayaran dari tabel pembayaran; order manual Tunai yang lunas
-      // tidak punya baris pembayaran sehingga fallback ke Tunai. Yang masih
-      // pending/gagal (belum ada pembayaran) tampil '-'.
-      metode_pembayaran:
-        r.pembayaran?.metode_pembayaran ||
-        (r.source === 'offline' && r.status_bayar === 'berhasil' ? 'Tunai' : null),
-    }))
+    const withOwners = (data || []).map((r) => {
+      const pemilikSnaps = parseJsonArray<PartySnapshot>(r.pemilik_data)
+      const pemesan = resolvePemesan(r, r.customers)
+      // Nama/email pemesan memakai snapshot pesanan agar konsisten dengan
+      // isian checkout, bukan nama lama pada tabel customers.
+      const customers = r.customers
+        ? { ...r.customers, nama: pemesan.nama, email: pemesan.email }
+        : r.customers
+      return {
+        ...r,
+        customers,
+        pemilik_tiket: (r.pemilik_ids || []).map((id: string, i: number) => ({
+          nama: pemilikSnaps[i]?.nama || ownerById.get(id)?.nama || null,
+        })),
+        // Metode pembayaran dari tabel pembayaran; order manual Tunai yang lunas
+        // tidak punya baris pembayaran sehingga fallback ke Tunai. Yang masih
+        // pending/gagal (belum ada pembayaran) tampil '-'.
+        metode_pembayaran:
+          r.pembayaran?.metode_pembayaran ||
+          (r.source === 'offline' && r.status_bayar === 'berhasil' ? 'Tunai' : null),
+      }
+    })
     return NextResponse.json({ data: withOwners })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
@@ -167,10 +192,11 @@ export async function POST(request: Request) {
         .maybeSingle()
 
       if (existingCustomer) {
+        // Jangan timpa nama customer: nama per-order disimpan di pesanan
+        // (nama_pemesan) agar riwayat tiap transaksi tetap berbeda.
         const { error: updError } = await supabase
           .from('customers')
           .update({
-            nama: c.nama,
             no_hp: c.no_hp || null,
             usia: c.usia || null,
             no_identitas: c.no_identitas || null,
@@ -246,16 +272,41 @@ export async function POST(request: Request) {
 
     const bookingId = await generateBookingCode(supabase)
 
+    // Snapshot data pemesan + seluruh pemilik tiket sesuai isian checkout.
+    // Dipakai agar e-tiket & dashboard konsisten walau `customers` berubah.
+    const pemesanData = {
+      nama: body.nama,
+      email: body.email,
+      no_hp: body.no_hp ?? null,
+      usia: body.usia ?? null,
+      no_identitas: body.no_identitas ?? null,
+      jenis_identitas: body.jenis_identitas ?? null,
+      jenis_kelamin: body.jenis_kelamin ?? null,
+    }
+    const pemilikData = owners.map((o) => ({
+      nama: o.nama,
+      email: o.email,
+      no_hp: o.no_hp ?? null,
+      usia: o.usia ?? null,
+      no_identitas: o.no_identitas ?? null,
+      jenis_identitas: o.jenis_identitas ?? null,
+      jenis_kelamin: o.jenis_kelamin ?? null,
+    }))
+
     // 5. Simpan pesanan_tiket
     const { data: pesanan, error: pesananError } = await supabase
       .from('pesanan_tiket')
       .insert({
         booking_id: bookingId,
         id_customer: pemesanId,
+        nama_pemesan: body.nama,
+        email_pemesan: body.email,
+        pemesan_data: pemesanData,
         id_tiket: body.id_tiket,
         id_voucher: idVoucher,
         jumlah: body.jumlah,
         pemilik_ids: ownerIds,
+        pemilik_data: pemilikData,
         source: body.source || 'online',
         status_bayar: body.manual ? 'berhasil' : 'pending',
         status_check_in: 'belum_check_in',

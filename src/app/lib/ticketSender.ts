@@ -2,6 +2,7 @@ import { getServerSupabase } from './supabaseClient'
 import { generateTicketPdf, type TicketPdfData } from './ticketPdf'
 import { sendTicketEmail } from './ticketEmail'
 import { getEventById, formatEventDisplay } from './events'
+import { mergeHolder, parseJsonArray, resolvePemesan, type PartySnapshot } from './orderSnapshot'
 
 // Kirim email berisi kode booking setelah pembayaran berhasil.
 // Secara default TANPA lampiran PDF — customer melihat tiket di web.
@@ -28,10 +29,13 @@ export async function sendTicketEmailForBooking(
     const event = await getEventById(supabase, pesanan.tiket?.id_event)
     const eventDisplay = formatEventDisplay(event)
     const cust = pesanan.customers
+    // Data pemesan per pesanan (snapshot) diprioritaskan di atas customers.
+    const pemesan = resolvePemesan(pesanan, cust)
+    const pemilikSnaps = parseJsonArray<PartySnapshot>(pesanan.pemilik_data)
     const kategori = pesanan.tiket?.kategori || 'TIKET'
     const harga = Number(pesanan.tiket?.harga ?? 0)
 
-    if (!cust?.email || !cust.email.includes('@')) {
+    if (!pemesan.email || !pemesan.email.includes('@')) {
       console.error(`[ticket-email] Booking ${bookingId} tidak punya email valid`)
       return false
     }
@@ -57,21 +61,22 @@ export async function sendTicketEmailForBooking(
     const attachments: { filename: string; content: Buffer; contentType: string }[] = []
     const holderNames: string[] = []
     for (let i = 0; i < count; i++) {
-      const holder = ownerById.get(pesanan.pemilik_ids?.[i] ?? '') ?? cust
-      holderNames.push(holder?.nama || '-')
+      const dbHolder = ownerById.get(pesanan.pemilik_ids?.[i] ?? '') ?? cust
+      const holder = mergeHolder(pemilikSnaps[i], dbHolder, pemesan)
+      holderNames.push(holder.nama || '-')
       if (!withPdf) continue
       const pdfData: TicketPdfData = {
         booking_id: `${pesanan.booking_id}-${i + 1}`,
         jumlah: 1,
         kategori,
         harga,
-        nama: holder?.nama || '-',
-        email: holder?.email || '-',
-        no_hp: holder?.no_hp ?? null,
-        no_identitas: holder?.no_identitas ?? null,
-        jenis_identitas: holder?.jenis_identitas ?? null,
-        jenis_kelamin: holder?.jenis_kelamin ?? null,
-        usia: holder?.usia ?? null,
+        nama: holder.nama || '-',
+        email: holder.email || '-',
+        no_hp: holder.no_hp ?? null,
+        no_identitas: holder.no_identitas ?? null,
+        jenis_identitas: holder.jenis_identitas ?? null,
+        jenis_kelamin: holder.jenis_kelamin ?? null,
+        usia: holder.usia ?? null,
         event: eventDisplay,
       }
       const pdf = await generateTicketPdf(pdfData)
@@ -87,18 +92,18 @@ export async function sendTicketEmailForBooking(
       jumlah: count,
       kategori,
       harga,
-      nama: cust?.nama || '-',
-      email: cust?.email || '-',
-      no_hp: cust?.no_hp ?? null,
-      no_identitas: cust?.no_identitas ?? null,
-      jenis_identitas: cust?.jenis_identitas ?? null,
-      jenis_kelamin: cust?.jenis_kelamin ?? null,
-      usia: cust?.usia ?? null,
+      nama: pemesan.nama || '-',
+      email: pemesan.email || '-',
+      no_hp: pemesan.no_hp ?? null,
+      no_identitas: pemesan.no_identitas ?? null,
+      jenis_identitas: pemesan.jenis_identitas ?? null,
+      jenis_kelamin: pemesan.jenis_kelamin ?? null,
+      usia: pemesan.usia ?? null,
       event: eventDisplay,
     }
 
     await sendTicketEmail(
-      cust.email,
+      pemesan.email,
       attachments,
       summary,
       holderNames,
@@ -110,7 +115,7 @@ export async function sendTicketEmailForBooking(
         withPdf,
       }
     )
-    console.log(`[ticket-email] ${attachments.length} e-tiket terkirim ke ${cust.email} (${bookingId})`)
+    console.log(`[ticket-email] ${attachments.length} e-tiket terkirim ke ${pemesan.email} (${bookingId})`)
     return true
   } catch (err) {
     console.error('[ticket-email] Gagal kirim email:', err instanceof Error ? err.message : err)

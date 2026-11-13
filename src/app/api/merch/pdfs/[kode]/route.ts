@@ -27,10 +27,11 @@ export async function GET(
     }
 
     const first = resolved.rows[0]
-    const cust = first.customers
+    const group = buildMerchGroupData(resolved.rows, resolved.groupCode)
+    // group.customers sudah memakai snapshot pesanan (nama/email sesuai checkout).
+    const cust = group.customers
     const event = await getEventById(supabase, first.merchandise?.id_event || null)
     const eventDisplay = formatEventDisplay(event)
-    const group = buildMerchGroupData(resolved.rows, resolved.groupCode)
 
     const pdfData: MerchPdfData = {
       kode_pengambilan: resolved.groupCode,

@@ -100,8 +100,10 @@ export default function Footer() {
             </p>
             <div className="flex items-center gap-2.5">
               <a
-                href="#"
+                href="https://www.instagram.com/m4dnesstita"
                 aria-label="Instagram"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#f9ce34] via-[#ee2a7b] to-[#6228d7] flex items-center justify-center text-white shadow-xs hover:scale-105 transition-transform"
               >
                 <svg className="w-4 h-4 fill-white" viewBox="0 0 24 24">
@@ -109,8 +111,10 @@ export default function Footer() {
                 </svg>
               </a>
               <a
-                href="#"
+                href="https://www.tiktok.com/@califordelreyyy"
                 aria-label="TikTok"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="w-9 h-9 rounded-xl bg-black dark:bg-gray-800 dark:border dark:border-gray-700 flex items-center justify-center text-white shadow-xs hover:scale-105 transition-transform"
               >
                 <svg className="w-4 h-4 fill-white" viewBox="0 0 24 24">
@@ -118,8 +122,10 @@ export default function Footer() {
                 </svg>
               </a>
               <a
-                href="#"
+                href="https://www.threads.com/@m4dnesstita"
                 aria-label="X"
+                target="_blank"
+                rel="noopener noreferrer"
                 className="w-9 h-9 rounded-xl bg-black dark:bg-gray-800 dark:border dark:border-gray-700 flex items-center justify-center text-white shadow-xs hover:scale-105 transition-transform"
               >
                 <svg className="w-3.5 h-3.5 fill-white" viewBox="0 0 24 24">

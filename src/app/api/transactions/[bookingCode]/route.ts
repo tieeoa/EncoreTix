@@ -3,6 +3,8 @@ import { getServerSupabase } from '../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay, getActiveEvent } from '../../../lib/events'
 import { sendTicketEmailForBooking } from '../../../lib/ticketSender'
 import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../lib/rateLimit'
+import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
+import { parseJsonArray, resolvePemesan, mergeHolder, type PartySnapshot, type HolderInfo } from '@/app/lib/orderSnapshot'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,27 +20,19 @@ function parseTicketCode(raw: string): { bookingCode: string; ticketIndex: numbe
 // Ambil data pemilik tiket sesuai urutan (tiket #1, #2, dst).
 async function getPemilikTiket(
   supabase: ReturnType<typeof getServerSupabase>,
-  pemilikIds: string[] | null | undefined
+  pemilikIds: string[] | null | undefined,
+  snapshots: PartySnapshot[],
+  fallback: HolderInfo
 ) {
   if (!pemilikIds || pemilikIds.length === 0) return []
   const { data: customers } = await supabase
     .from('customers')
     .select('id, nama, email, no_hp, usia, no_identitas, jenis_identitas, jenis_kelamin')
     .in('id', pemilikIds)
-  if (!customers) return []
-  const byId = new Map(customers.map((c) => [c.id, c]))
-  return pemilikIds.map((id) => {
-    const c = byId.get(id)
-    return {
-      nama: c?.nama ?? null,
-      email: c?.email ?? null,
-      no_hp: c?.no_hp ?? null,
-      usia: c?.usia ?? null,
-      no_identitas: c?.no_identitas ?? null,
-      jenis_identitas: c?.jenis_identitas ?? null,
-      jenis_kelamin: c?.jenis_kelamin ?? null,
-    }
-  })
+  const byId = new Map((customers ?? []).map((c) => [c.id, c as PartySnapshot]))
+  // Snapshot pesanan diprioritaskan supaya tiap tiket menampilkan data yang
+  // diisi saat checkout, bukan nama lama pada tabel customers.
+  return pemilikIds.map((id, i) => mergeHolder(snapshots[i], byId.get(id), fallback))
 }
 
 // GET /api/transactions/:bookingCode
@@ -65,13 +59,25 @@ export async function GET(
     if (!pesanan) {
       return NextResponse.json({ error: 'Pesanan tidak ditemukan' }, { status: 404 })
     }
+
+    // Auto-sync status langsung dengan Midtrans jika di database masih pending
+    if (pesanan.status_bayar === 'pending') {
+      const synced = await syncOrderWithMidtrans(baseCode)
+      if (synced && synced !== 'pending') {
+        pesanan.status_bayar = synced
+      }
+    }
+
     if (ticketIndex != null && (ticketIndex < 1 || ticketIndex > pesanan.jumlah)) {
       return NextResponse.json({ error: 'Tiket tidak ditemukan' }, { status: 404 })
     }
 
-    const pemilikTiket = await getPemilikTiket(supabase, pesanan.pemilik_ids)
+    const pemilikSnaps = parseJsonArray<PartySnapshot>(pesanan.pemilik_data)
+    const pemesan = resolvePemesan(pesanan, pesanan.customers)
+    const pemilikTiket = await getPemilikTiket(supabase, pesanan.pemilik_ids, pemilikSnaps, pemesan)
+    const customers = { ...(pesanan.customers || {}), ...pemesan }
     const event = formatEventDisplay(await getEventById(supabase, pesanan.tiket?.id_event))
-    return NextResponse.json({ data: { ...pesanan, pemilik_tiket: pemilikTiket, event } })
+    return NextResponse.json({ data: { ...pesanan, customers, pemilik_tiket: pemilikTiket, event } })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
     return NextResponse.json({ error: message }, { status: 500 })

@@ -7,6 +7,7 @@ import RealQR from '@/components/RealQR'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
+import { clearPaymentCountdown } from '@/app/lib/paymentTimer'
 
 interface TicketHolder {
   ticketId: string
@@ -77,7 +78,7 @@ interface PesananData {
 
 function QRCodeVisual({ value }: { value: string }) {
   return (
-    <div className="w-56 h-56 sm:w-64 sm:h-64 border border-gray-100 rounded-2xl p-3 bg-white flex items-center justify-center shadow-xs">
+    <div className="w-56 h-56 sm:w-64 sm:h-64 border border-gray-100 dark:border-gray-800 rounded-2xl p-3 bg-white flex items-center justify-center shadow-xs mx-auto">
       <RealQR value={value} size={224} className="w-full h-full" />
     </div>
   )
@@ -119,6 +120,10 @@ export default function TiketDetailPage() {
       .then((pesananRes) => {
         if (pesananRes.error) throw new Error(pesananRes.error)
         setBooking(pesananRes.data)
+        if (pesananRes.data?.status_bayar === 'berhasil') {
+          clearPaymentCountdown()
+          try { sessionStorage.removeItem('encoretix_checkout_tiket_data') } catch {}
+        }
       })
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
@@ -170,6 +175,84 @@ export default function TiketDetailPage() {
         <button onClick={() => router.push('/tiket-saya')} className="text-xs text-blue-600 underline">
           {t({ ID: 'Kembali ke Tiket Saya', EN: 'Back to My Tickets' })}
         </button>
+      </div>
+    )
+  }
+
+  // Pesanan online dibuat sejak checkout (status pending), tetapi e-tiket dan QR
+  // baru sah setelah pembayaran dikonfirmasi Midtrans. Jangan tampilkan tiket/
+  // QR/PDF untuk pesanan yang belum lunas atau sudah gagal.
+  if (booking.status_bayar !== 'berhasil') {
+    const gagal = booking.status_bayar === 'gagal'
+    return (
+      <div className="min-h-screen bg-gray-50/50 dark:bg-gray-950 flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-8 text-center shadow-xs">
+          <div
+            className={`mx-auto w-14 h-14 rounded-2xl flex items-center justify-center mb-5 ${
+              gagal
+                ? 'bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-400'
+                : 'bg-amber-50 text-amber-600 dark:bg-amber-950/40 dark:text-amber-400'
+            }`}
+          >
+            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+              {gagal ? (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18 18 6M6 6l12 12" />
+              ) : (
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              )}
+            </svg>
+          </div>
+
+          <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+            {gagal
+              ? t({ ID: 'Pesanan Gagal / Kedaluwarsa', EN: 'Order Failed / Expired' })
+              : t({ ID: 'Pembayaran Belum Selesai', EN: 'Payment Not Completed' })}
+          </h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+            {gagal
+              ? t({
+                  ID: 'Pesanan ini dibatalkan karena pembayaran tidak diselesaikan tepat waktu. Silakan pesan tiket baru.',
+                  EN: 'This order was cancelled because payment was not completed in time. Please place a new order.',
+                })
+              : t({
+                  ID: 'E-tiket dan QR baru muncul setelah pembayaran dikonfirmasi. Selesaikan pembayaran untuk melihat tiketmu.',
+                  EN: 'The e-ticket and QR appear only after payment is confirmed. Complete the payment to view your ticket.',
+                })}
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-4 font-mono">{booking.booking_id}</p>
+
+          <div className="mt-6 space-y-2">
+            {gagal ? (
+              <button
+                onClick={() => router.push('/tiket')}
+                className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-colors cursor-pointer"
+              >
+                {t({ ID: 'Pesan Tiket Lagi', EN: 'Order Again' })}
+              </button>
+            ) : (
+              <>
+                <button
+                  onClick={() => router.push(`/payment?booking=${encodeURIComponent(booking.booking_id)}`)}
+                  className="w-full bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold py-3 px-4 rounded-xl text-sm transition-colors cursor-pointer"
+                >
+                  {t({ ID: 'Lanjutkan Pembayaran', EN: 'Continue Payment' })}
+                </button>
+                <button
+                  onClick={() => window.location.reload()}
+                  className="w-full border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 font-semibold py-3 px-4 rounded-xl text-sm hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer"
+                >
+                  {t({ ID: 'Muat Ulang Status', EN: 'Refresh Status' })}
+                </button>
+              </>
+            )}
+            <button
+              onClick={() => router.push('/tiket-saya')}
+              className="w-full text-xs text-blue-600 dark:text-blue-400 underline pt-1"
+            >
+              {t({ ID: 'Kembali ke Tiket Saya', EN: 'Back to My Tickets' })}
+            </button>
+          </div>
+        </div>
       </div>
     )
   }
@@ -265,7 +348,7 @@ export default function TiketDetailPage() {
 
         {/* Main 2-Column Content Grid */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-          <div className="md:col-span-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-xs">
+          <div className="md:col-span-6 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl p-6 sm:p-8 flex flex-col items-center shadow-xs md:sticky md:top-6">
             <div className="text-center mb-6">
               <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 tracking-wider uppercase">
                 {currentTicket.categoryType}
@@ -275,7 +358,7 @@ export default function TiketDetailPage() {
               </h2>
             </div>
 
-            <div className="mb-3">
+            <div className="w-full flex justify-center items-center mb-4">
               <QRCodeVisual value={`ENCORETIX:${currentTicket.ticketId}`} />
             </div>
 

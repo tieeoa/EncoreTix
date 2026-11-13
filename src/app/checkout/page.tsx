@@ -4,7 +4,7 @@ import { useState, useEffect, useRef, Suspense } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { usePaymentCountdown } from '../lib/paymentTimer'
+import { usePaymentCountdown, clearPaymentCountdown } from '../lib/paymentTimer'
 import PaymentTimerBanner from '@/components/PaymentTimerBanner'
 import PaymentStatusModal from '@/components/PaymentStatusModal'
 import StickyBottomBar from '@/components/StickyBottomBar'
@@ -84,6 +84,31 @@ const ADMIN_FEE_RATE = 0.04
 
 const FORM_STORAGE_KEY = 'encoretix_checkout_tiket_data'
 
+function safeGetStorage(key: string): string | null {
+  if (typeof window === 'undefined') return null
+  try {
+    return localStorage.getItem(key) || sessionStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetStorage(key: string, value: string) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(key, value)
+    sessionStorage.setItem(key, value)
+  } catch {}
+}
+
+function safeRemoveStorage(key: string) {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.removeItem(key)
+    sessionStorage.removeItem(key)
+  } catch {}
+}
+
 function validateOwnerData(o: OwnerData, label: string, t: (x: { ID: string; EN: string }) => string): string {
   const msg = (id: string, en: string) => t({ ID: id, EN: en })
 
@@ -115,10 +140,11 @@ function validateOwnerData(o: OwnerData, label: string, t: (x: { ID: string; EN:
     return msg(`Format email ${label} tidak valid.`, `Invalid email format for ${label}.`)
   }
   const wa = o.whatsapp.replace(/[\s-]/g, '')
-  if (!/^(?:\+?62|0)8\d{8,11}$/.test(wa)) {
+  // Terima: 81234567890, +6281234567890, 081234567890
+  if (!/^(?:(?:\+?62|0)8\d{8,11}|8\d{8,11})$/.test(wa)) {
     return msg(
-      `Nomor WhatsApp ${label} tidak valid. Contoh: 081234567890.`,
-      `Invalid WhatsApp number for ${label}. e.g. 081234567890.`
+      `Nomor WhatsApp ${label} tidak valid. Contoh: 81234567890, 081234567890, atau +6281234567890.`,
+      `Invalid WhatsApp number for ${label}. e.g. 81234567890.`
     )
   }
   return ''
@@ -145,7 +171,7 @@ function CheckoutContent() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(tiketId ? '' : t({ ID: 'ID tiket tidak ditemukan.', EN: 'Ticket ID not found.' }))
 
-  const { remaining, isExpired } = usePaymentCountdown(true, false)
+  const { remaining, isExpired } = usePaymentCountdown(false, false)
 
   const [pemesan, setPemesan] = useState<OwnerData>(EMPTY_OWNER)
 
@@ -161,68 +187,57 @@ function CheckoutContent() {
   const [isVoucherApplied, setIsVoucherApplied] = useState(false)
   const [isValidatingVoucher, setIsValidatingVoucher] = useState(false)
 
-  // Data form dikembalikan dari sessionStorage hanya setelah muat, supaya data
-  // tersimpan tidak ditimpa data kosong saat mount.
-  const restoredRef = useRef(false)
+  // State untuk melacak apakah data tersimpan sudah selesai dipulihkan
+  const [isRestored, setIsRestored] = useState(false)
 
+  // 1. Pulihkan data form dari storage saat pertama kali mount di browser
   useEffect(() => {
-    let saved: string | null = null
     try {
-      saved = sessionStorage.getItem(FORM_STORAGE_KEY)
+      const saved = safeGetStorage(FORM_STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (parsed && typeof parsed === 'object') {
+          if (parsed.pemesan && typeof parsed.pemesan === 'object') {
+            setPemesan((prev) => ({ ...prev, ...parsed.pemesan }))
+          }
+          if (Array.isArray(parsed.owners) && parsed.owners.length > 0) {
+            setOwners(
+              Array.from({ length: ownerCount }, (_, i) =>
+                parsed.owners[i] ? { ...EMPTY_OWNER, ...parsed.owners[i] } : { ...EMPTY_OWNER }
+              )
+            )
+          }
+          if (typeof parsed.isSameAsPemesan === 'boolean') {
+            setIsSameAsPemesan(parsed.isSameAsPemesan)
+          }
+          if (typeof parsed.voucherCode === 'string') {
+            setVoucherCode(parsed.voucherCode)
+          }
+        }
+      }
     } catch {
-      restoredRef.current = true
-      return
+      // abaikan jika parsing gagal
     }
-    if (!saved) {
-      restoredRef.current = true
-      return
-    }
-    let parsed: { pemesan?: OwnerData; owners?: OwnerData[]; isSameAsPemesan?: boolean; voucherCode?: string } | null = null
-    try {
-      parsed = JSON.parse(saved)
-    } catch {
-      restoredRef.current = true
-      return
-    }
-    if (!parsed || typeof parsed !== 'object') {
-      restoredRef.current = true
-      return
-    }
-    const timer = setTimeout(() => {
-      if (parsed.pemesan && typeof parsed.pemesan === 'object') {
-        setPemesan({ ...EMPTY_OWNER, ...parsed.pemesan })
-      }
-      if (Array.isArray(parsed.owners)) {
-        const savedOwners = parsed.owners
-        setOwners(
-          Array.from({ length: ownerCount }, (_, i) =>
-            savedOwners[i] ? { ...EMPTY_OWNER, ...savedOwners[i] } : { ...EMPTY_OWNER }
-          )
-        )
-      }
-      if (typeof parsed.isSameAsPemesan === 'boolean') {
-        setIsSameAsPemesan(parsed.isSameAsPemesan)
-      }
-      if (typeof parsed.voucherCode === 'string') {
-        setVoucherCode(parsed.voucherCode)
-      }
-      restoredRef.current = true
-    }, 0)
-    return () => clearTimeout(timer)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    // Set state isRestored = true. Karena state update di-queue untuk render berikutnya,
+    // Effect penyimpanan di bawah TIDAK AKAN berjalan pada initial render saat data masih kosong.
+    setIsRestored(true)
+  }, [ownerCount])
 
+  // 2. Simpan setiap perubahan data form ke storage HANYA setelah data lama selesai dipulihkan
   useEffect(() => {
-    if (!restoredRef.current) return
-    try {
-      sessionStorage.setItem(
-        FORM_STORAGE_KEY,
-        JSON.stringify({ pemesan, owners, isSameAsPemesan, voucherCode })
-      )
-    } catch {
-      // abaikan jika storage tidak tersedia
-    }
-  }, [pemesan, owners, isSameAsPemesan, voucherCode])
+    if (!isRestored) return
+    safeSetStorage(
+      FORM_STORAGE_KEY,
+      JSON.stringify({ pemesan, owners, isSameAsPemesan, voucherCode })
+    )
+  }, [isRestored, pemesan, owners, isSameAsPemesan, voucherCode])
+
+  // Tombol kembali: reset timer dan form data jika user membatalkan proses checkout
+  const handleBack = () => {
+    clearPaymentCountdown()
+    safeRemoveStorage(FORM_STORAGE_KEY)
+    router.back()
+  }
 
   const updateOwner = (i: number, patch: Partial<OwnerData>) => {
     setOwners((prev) => prev.map((o, idx) => (idx === i ? { ...o, ...patch } : o)))
@@ -314,15 +329,18 @@ function CheckoutContent() {
       setError(buyerErr)
       return
     }
-    for (let i = 0; i < owners.length; i++) {
+    // Selalu hitung ulang pemilik saat submit: jika "samakan dengan pemesan"
+    // aktif, ikuti data pemesan terbaru (bukan salinan saat toggle diklik).
+    const effectiveOwners = isSameAsPemesan ? owners.map(() => ({ ...pemesan })) : owners
+    for (let i = 0; i < effectiveOwners.length; i++) {
       const label = t({ ID: `Pemilik Tiket #${i + 1}`, EN: `Ticket Owner #${i + 1}` })
-      const ownerErr = validateOwnerData(owners[i], label, t)
+      const ownerErr = validateOwnerData(effectiveOwners[i], label, t)
       if (ownerErr) {
         setError(ownerErr)
         return
       }
     }
-    const payloadOwners = owners.map((o) => ({
+    const payloadOwners = effectiveOwners.map((o) => ({
       nama: o.nama,
       email: o.email,
       no_hp: o.whatsapp,
@@ -355,11 +373,8 @@ body: JSON.stringify({
       })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || 'Gagal membuat pesanan')
-      try {
-        sessionStorage.removeItem(FORM_STORAGE_KEY)
-      } catch {
-        // ignore
-      }
+      // Catatan: FORM_STORAGE_KEY sengaja TIDAK dihapus di sini agar jika pemesan
+      // menekan tombol 'Kembali' dari halaman pembayaran, isian form tidak hilang.
       router.push(`/payment?booking=${result.data.booking_id}`)
     } catch (err) {
       setError(friendlyError(err))
@@ -373,7 +388,7 @@ body: JSON.stringify({
 
       <div className="max-w-6xl mx-auto px-4 py-10">
         <div className="mb-8">
-          <button onClick={() => router.back()} className="text-sm font-medium text-gray-600 mb-6 hover:text-gray-900">
+          <button onClick={handleBack} className="text-sm font-medium text-gray-600 mb-6 hover:text-gray-900">
             &lt; {t({ ID: 'Kembali', EN: 'Back' })}
           </button>
           <h1 className="text-2xl font-bold text-gray-900">{t({ ID: 'Detail Pemesanan', EN: 'Order Details' })}</h1>
@@ -406,7 +421,7 @@ body: JSON.stringify({
                         />
                       </div>
                     </div>
-                    {identitasHint && <p className="text-[11px] text-red-500 mt-1">⚠️ {identitasHint}</p>}
+                    {identitasHint && <p className="text-[11px] text-red-500 mt-1">{identitasHint}</p>}
                   </div>
 
                   <div>
@@ -434,18 +449,18 @@ body: JSON.stringify({
                     label={t({ ID: 'Email', EN: 'Email' })} 
                     type="email" 
                     required 
-                    hint={<><span>ℹ️</span> {t({ ID: 'Tiket akan dikirimkan ke email ini', EN: 'The ticket will be sent to this email' })}</>}
+                    hint={<><span className="text-gray-400">i</span> {t({ ID: 'Tiket akan dikirimkan ke email ini', EN: 'The ticket will be sent to this email' })}</>}
                     value={pemesan.email} 
                     onChange={(e) => setPemesan({ ...pemesan, email: e.target.value })} 
                   />
-                  <Input 
-                    label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })} 
-                    required 
-                    type="tel"
-                    prefixIcon={<span className="text-gray-500 text-xs font-medium flex items-center gap-1"><span className="text-red-500">🇮🇩</span> +62</span>}
-                    value={pemesan.whatsapp} 
-                    onChange={(e) => setPemesan({ ...pemesan, whatsapp: e.target.value })} 
-                  />
+<Input 
+  label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })} 
+  required 
+  type="tel"
+  prefixIcon={<span className="text-gray-500 text-xs font-medium flex items-center gap-1">+62</span>}
+  value={pemesan.whatsapp}
+  onChange={(e) => setPemesan({ ...pemesan, whatsapp: e.target.value })}
+/>
                 </div>
               </div>
 
@@ -456,7 +471,31 @@ body: JSON.stringify({
                   <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer">
                     {t({ ID: 'Samakan seperti data pemesan', EN: 'Same as orderer details' })}
                     <div className={`w-9 h-5 rounded-full relative transition-colors ${isSameAsPemesan ? 'bg-blue-500' : 'bg-gray-200'}`}>
-                      <input type="checkbox" className="hidden" checked={isSameAsPemesan} onChange={(e) => { const on = e.target.checked; if (on) setOwners(owners.map(() => ({ ...pemesan }))); setIsSameAsPemesan(on) }} />
+                      <input
+                        type="checkbox"
+                        className="hidden"
+                        checked={isSameAsPemesan}
+                        onChange={(e) => {
+                          const on = e.target.checked
+                          if (on) {
+                            // Salin data pemesan ke pemilik tiket
+                            setOwners(Array.from({ length: ownerCount }, () => ({ ...pemesan })))
+                          } else {
+                            // Saat dinonaktifkan: data pemesan yang sudah tersalin TETAP ADA di input form,
+                            // tidak dihapus ke kosong, agar user tinggal mengganti bagian yang perlu diubah.
+                            setOwners((prev) =>
+                              Array.from({ length: ownerCount }, (_, i) => {
+                                const current = prev[i]
+                                if (current && current.nama && current.nama.trim().length > 0) {
+                                  return { ...current }
+                                }
+                                return { ...pemesan }
+                              })
+                            )
+                          }
+                          setIsSameAsPemesan(on)
+                        }}
+                      />
                       <div className={`absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform ${isSameAsPemesan ? 'translate-x-4' : 'translate-x-0'}`}></div>
                     </div>
                   </label>
@@ -469,7 +508,8 @@ body: JSON.stringify({
 
                 {isSameAsPemesan ? (
                   <div className="flex items-center gap-2 text-xs text-gray-500 py-4">
-                    <span>✓</span> {t({ ID: 'Data pemilik tiket mengikuti data pemesan.', EN: 'Ticket owner details follow the orderer details.' })}
+                    <svg className="w-3.5 h-3.5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                    {t({ ID: 'Data pemilik tiket mengikuti data pemesan.', EN: 'Ticket owner details follow the orderer details.' })}
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -508,7 +548,7 @@ body: JSON.stringify({
                               </div>
                             </div>
                             {(o.jenisIdentitas === 'KTP' || o.jenisIdentitas === 'SIM') && o.identitas.length > 0 && o.identitas.trim().length !== 16 && (
-                              <p className="text-[11px] text-red-500 mt-1">⚠️ {t({ ID: 'Nomor identitas harus 16 digit', EN: 'Identity number must be 16 digits' })}</p>
+                              <p className="text-[11px] text-red-500 mt-1">{t({ ID: 'Nomor identitas harus 16 digit', EN: 'Identity number must be 16 digits' })}</p>
                             )}
                           </div>
 
@@ -546,7 +586,7 @@ body: JSON.stringify({
                             label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })}
                             required
                             type="tel"
-                            prefixIcon={<span className="text-gray-500 text-xs font-medium flex items-center gap-1"><span className="text-red-500">🇮🇩</span> +62</span>}
+                            prefixIcon={<span className="text-gray-500 text-xs font-medium">+62</span>}
                             value={o.whatsapp}
                             onChange={(e) => updateOwner(i, { whatsapp: e.target.value })}
                           />
@@ -631,7 +671,7 @@ body: JSON.stringify({
                   )}
                 </div>
                 {voucherError && <p className="text-[11px] text-red-500 mt-1.5">{voucherError}</p>}
-                {isVoucherApplied && <p className="text-[11px] text-green-600 mt-1.5">✓ {t({ ID: 'Voucher berhasil digunakan', EN: 'Voucher applied successfully' })}</p>}
+                {isVoucherApplied && <p className="text-[11px] text-green-600 mt-1.5">{t({ ID: 'Voucher berhasil digunakan', EN: 'Voucher applied successfully' })}</p>}
               </div>
 
               <div className="flex justify-between items-center py-4">

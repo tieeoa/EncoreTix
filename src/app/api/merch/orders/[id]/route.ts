@@ -4,6 +4,7 @@ import { getEventById, formatEventDisplay, getActiveEvent } from '../../../../li
 import { sendMerchEmailForOrder } from '../../../../lib/merchSender'
 import { resolveMerchGroup, buildMerchGroupData } from '../../../../lib/merchGroup'
 import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../../lib/rateLimit'
+import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 
 export const dynamic = 'force-dynamic'
 
@@ -25,6 +26,14 @@ export async function GET(
     const resolved = await resolveMerchGroup(supabase, id)
     if (!resolved) {
       return NextResponse.json({ error: 'Pesanan merch tidak ditemukan' }, { status: 404 })
+    }
+
+    // Auto-sync status pesanan merchandise jika masih pending
+    if (resolved.rows[0]?.status_bayar === 'pending') {
+      const synced = await syncOrderWithMidtrans(resolved.groupCode)
+      if (synced && synced !== 'pending') {
+        resolved.rows.forEach((r) => { r.status_bayar = synced })
+      }
     }
 
     const group = buildMerchGroupData(resolved.rows, resolved.groupCode)
