@@ -26,6 +26,7 @@
 
 # file migrasi & backup data (berisi data pribadi)
 /.migration/
+/backups/
 
 # debug
 npm-debug.log*

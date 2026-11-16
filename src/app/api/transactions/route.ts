@@ -6,6 +6,7 @@ import { isTicketSalesClosed } from '../../lib/salesClosed'
 import { resolveEventId } from '../../lib/events'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 import { parseJsonArray, resolvePemesan, type PartySnapshot } from '../../lib/orderSnapshot'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,8 @@ export const dynamic = 'force-dynamic'
 // Filter: ?event=<id> (jika kosong = event aktif otomatis).
 export async function GET(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const supabase = getServerSupabase()
     await expireExpiredPendingOrders(supabase)
     const { searchParams } = new URL(request.url)
@@ -133,6 +136,12 @@ export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CreatePesananBody
 
+    // Order manual (panitia) hanya boleh dibuat oleh admin/superadmin.
+    if (body.manual) {
+      const auth = requireRole(request, ['admin', 'superadmin'])
+      if ('response' in auth) return auth.response
+    }
+
     if (!body.nama || !body.email) {
       return NextResponse.json({ error: 'Nama dan email wajib diisi' }, { status: 400 })
     }
@@ -165,6 +174,17 @@ export async function POST(request: Request) {
     // Order manual (panitia) juga dilarang bila event sudah selesai / ditutup.
     if (body.manual && (await isTicketSalesClosed(supabase, tiket.id_event))) {
       return NextResponse.json({ error: 'Event sudah selesai. Order manual tidak dapat dibuat.' }, { status: 400 })
+    }
+
+    // Pembelian online hanya untuk tiket event yang sedang berlangsung.
+    if (!body.manual) {
+      const activeEventId = await resolveEventId(supabase, null)
+      if (activeEventId && tiket.id_event && String(tiket.id_event) !== String(activeEventId)) {
+        return NextResponse.json(
+          { error: 'Tiket ini bukan untuk event yang sedang berlangsung.' },
+          { status: 400 }
+        )
+      }
     }
 
 // 1. Simpan customer pemesan (penerima e-tiket) + customer pemilik tiket.

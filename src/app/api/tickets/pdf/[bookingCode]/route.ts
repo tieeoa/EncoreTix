@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../../lib/supabaseClient'
 import { generateTicketPdf, type TicketPdfData } from '../../../../lib/ticketPdf'
-import { getEventById, formatEventDisplay } from '../../../../lib/events'
+import { getEventById, formatEventDisplay, getActiveEvent } from '../../../../lib/events'
 import { mergeHolder, parseJsonArray, resolvePemesan, type PartySnapshot } from '../../../../lib/orderSnapshot'
 
 export const dynamic = 'force-dynamic'
@@ -43,6 +43,16 @@ export async function GET(
     if (pesanan.status_bayar !== 'berhasil') {
       return NextResponse.json(
         { error: 'Tiket belum lunas. E-tiket tersedia setelah pembayaran berhasil.' },
+        { status: 403 }
+      )
+    }
+
+    // Tiket event lain tidak boleh diunduh lewat alur event yang sedang berlangsung.
+    const activeEvent = await getActiveEvent(supabase)
+    const orderEventId = pesanan.tiket?.id_event ?? null
+    if (activeEvent && orderEventId && String(orderEventId) !== String(activeEvent.id)) {
+      return NextResponse.json(
+        { error: `Tiket ini bukan untuk${activeEvent.nama_event ? ` "${activeEvent.nama_event}"` : ' event yang sedang berlangsung'}.` },
         { status: 403 }
       )
     }

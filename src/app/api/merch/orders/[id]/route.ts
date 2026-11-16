@@ -5,6 +5,7 @@ import { sendMerchEmailForOrder } from '../../../../lib/merchSender'
 import { resolveMerchGroup, buildMerchGroupData } from '../../../../lib/merchGroup'
 import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../../lib/rateLimit'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,7 +41,9 @@ export async function GET(
     const event = formatEventDisplay(
       await getEventById(supabase, resolved.rows[0]?.merchandise?.id_event)
     )
-    return NextResponse.json({ data: { ...group, event } })
+    return NextResponse.json({
+      data: { ...group, event, event_id: resolved.rows[0]?.merchandise?.id_event ?? null },
+    })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
     return NextResponse.json({ error: message }, { status: 500 })
@@ -59,6 +62,8 @@ export async function PATCH(
   if (!rl.allowed) return rateLimitResponse(rl.resetAt)
 
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const { id } = await params
     const body = await request.json()
     if (!['belum_diambil', 'sudah_diambil'].includes(body.status_pengambilan)) {
@@ -130,6 +135,8 @@ export async function POST(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = requireRole(_request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const { id } = await params
     const supabase = getServerSupabase()
 

@@ -55,6 +55,8 @@ export function clearAdminSession(role?: string) {
       localStorage.removeItem(ADMIN_STORAGE_KEY)
       localStorage.removeItem(SUPERADMIN_STORAGE_KEY)
     }
+    // Hapus juga cookie sesi server agar API admin tidak bisa dipakai lagi.
+    void fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
   }
 }
 

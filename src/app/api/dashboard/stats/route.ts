@@ -3,6 +3,7 @@ import { getServerSupabase } from '../../../lib/supabaseClient'
 import { expireExpiredPendingOrders } from '../../../lib/expireOrders'
 import { getReportStats } from '../../../lib/reportStats'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,8 @@ export const dynamic = 'force-dynamic'
 // ?source=offline -> hitung metrik tiket HANYA dari input manual panitia (bukan penjualan web).
 export async function GET(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const supabase = getServerSupabase()
     const { searchParams } = new URL(request.url)
     const eventParam = searchParams.get('event')

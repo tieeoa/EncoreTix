@@ -8,6 +8,7 @@ import { useLang } from '@/lib/i18n'
 import { MERCH_SIZES, FREE_SIZE, isFreeSizeProduct } from '@/app/lib/merchStok'
 import { friendlyError } from '@/app/lib/fetchError'
 import { MerchCartProvider, CartFab, useMerchCart, pushStoredCartItem } from '@/app/lib/merchCart'
+import { clearMerchCheckoutDraft } from '@/app/lib/merchCheckoutDraft'
 import AutoScrollTrack from '@/components/AutoScrollTrack'
 
 interface MerchandiseData {
@@ -64,6 +65,10 @@ function MerchandiseDetailContent() {
 
   const [qty, setQty] = useState(1)
   const [size, setSize] = useState('')
+
+  useEffect(() => {
+    clearMerchCheckoutDraft()
+  }, [])
 
   useEffect(() => {
     if (!id) return

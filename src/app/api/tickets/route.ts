@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
+import { requireRole } from '@/lib/serverAuth'
 import { isTicketSalesClosed } from '../../lib/salesClosed'
 import { resolveEventId } from '../../lib/events'
 
@@ -34,6 +35,8 @@ export async function GET(request: Request) {
 // Body: { ..., event?: string } / event kosong = event aktif.
 export async function POST(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const body = await request.json()
     if (!body.kategori || !body.harga) {
       return NextResponse.json({ error: 'Kategori dan harga wajib diisi' }, { status: 400 })

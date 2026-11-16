@@ -7,6 +7,16 @@ import DashboardHeader from '@/components/layout/DashboardHeader'
 import { getAdminSession, useAdminName } from '@/lib/adminAuth'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
+import {
+  EMPTY_DIGITS,
+  IDENTITAS_OPTIONS,
+  needs16DigitIdentity,
+  sanitizeIdentitas,
+  sanitizeUsia,
+  sanitizeWhatsapp,
+  type DigitString,
+  type JenisIdentitas,
+} from '@/app/lib/formNumbers'
 import Toast from '@/components/Toast'
 import LoadingDots from '@/components/LoadingDots'
 
@@ -34,24 +44,23 @@ interface Pesanan {
 interface PersonData {
   nama: string
   identitas: string
-  jenisIdentitas: string
-  usia: string
+  jenisIdentitas: JenisIdentitas
+  usia: DigitString
   jenisKelamin: 'Laki-laki' | 'Perempuan'
   email: string
-  whatsapp: string
+  whatsapp: DigitString
 }
 
 const EMPTY_PERSON: PersonData = {
   nama: '',
   identitas: '',
   jenisIdentitas: 'KTP',
-  usia: '',
+  usia: EMPTY_DIGITS,
   jenisKelamin: 'Laki-laki',
   email: '',
-  whatsapp: '',
+  whatsapp: EMPTY_DIGITS,
 }
 
-const IDENTITAS_OPTIONS = ['KTP', 'SIM', 'Kartu Pelajar', 'Paspor']
 const PAYMENT_METHODS = ['Tunai', 'Transfer Bank', 'QRIS', 'Kartu Debit/Kredit']
 const FORM_STORAGE_KEY = 'encoretix_manual_order_data'
 
@@ -69,12 +78,12 @@ function Input({ label, required, hint, ...props }: { label: string; required?: 
         {label} {required && <span className="text-rose-500">*</span>}
       </label>
       <input required={required} {...props} className={INPUT_CLS} />
-      {hint && <p className="text-xs text-slate-600 mt-1 flex items-center gap-1">{hint}</p>}
+      {hint && <p className="text-xs text-red-500 mt-1">{hint}</p>}
     </div>
   )
 }
 
-function Select({ label, required, options, ...props }: { label?: string; required?: boolean; options: string[] } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+function Select({ label, required, options, ...props }: { label?: string; required?: boolean; options: readonly string[] } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div>
       {label && (
@@ -367,7 +376,10 @@ export default function AdminManualOrderPage() {
         <label className="block text-sm font-bold text-slate-900 mb-1.5">{t({ ID: 'Identitas', EN: 'Identity' })} <span className="text-rose-500">*</span></label>
         <div className="flex flex-col sm:flex-row gap-3">
           <div className="w-full sm:w-1/3">
-            <Select options={IDENTITAS_OPTIONS} value={person.jenisIdentitas} onChange={(e) => setPerson({ ...person, jenisIdentitas: e.target.value })} />
+            <Select options={IDENTITAS_OPTIONS} value={person.jenisIdentitas} onChange={(e) => {
+              const jenisIdentitas = e.target.value as JenisIdentitas
+              setPerson({ ...person, jenisIdentitas, identitas: sanitizeIdentitas(person.identitas, jenisIdentitas) })
+            }} />
           </div>
           <div className="w-full sm:w-2/3">
             <input
@@ -375,7 +387,7 @@ export default function AdminManualOrderPage() {
               placeholder={t({ ID: 'Nomor Identitas', EN: 'Identity Number' })}
               className={INPUT_CLS}
               value={person.identitas}
-              onChange={(e) => setPerson({ ...person, identitas: e.target.value })}
+              onChange={(e) => setPerson({ ...person, identitas: sanitizeIdentitas(e.target.value, person.jenisIdentitas) })}
             />
           </div>
         </div>
@@ -407,23 +419,24 @@ export default function AdminManualOrderPage() {
         </div>
       </div>
 
-      <Input label={t({ ID: 'Usia', EN: 'Age' })} type="number" required placeholder={t({ ID: 'Usia', EN: 'Age' })} value={person.usia} onChange={(e) => setPerson({ ...person, usia: e.target.value })} />
+      <Input label={t({ ID: 'Usia', EN: 'Age' })} type="text" inputMode="numeric" required placeholder={t({ ID: 'Usia', EN: 'Age' })} value={person.usia} onChange={(e) => setPerson({ ...person, usia: sanitizeUsia(e.target.value) })} />
       <Input
         label="Email"
         type="email"
         required
         placeholder="email@contoh.com"
-        hint={emailHint ? t({ ID: 'Tiket akan dikirimkan ke email ini', EN: 'The ticket will be sent to this email' }) : undefined}
+        hint={emailHint ? <span className="text-red-500">{t({ ID: 'Tiket akan dikirimkan ke email ini', EN: 'The ticket will be sent to this email' })}</span> : undefined}
         value={person.email}
         onChange={(e) => setPerson({ ...person, email: e.target.value })}
       />
       <Input
         label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })}
         type="tel"
+        inputMode="tel"
         required
         placeholder="812xxxxxxx"
         value={person.whatsapp}
-        onChange={(e) => setPerson({ ...person, whatsapp: e.target.value })}
+        onChange={(e) => setPerson({ ...person, whatsapp: sanitizeWhatsapp(e.target.value) })}
       />
     </div>
   )

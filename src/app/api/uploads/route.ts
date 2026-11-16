@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { mkdir, writeFile } from 'fs/promises'
 import path from 'path'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,6 +19,8 @@ const BUCKET_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 // Response: { url } — URL relatif yang bisa langsung dipakai di <img src>.
 export async function POST(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     let file: File | null = null
     let bucket = DEFAULT_BUCKET
     try {

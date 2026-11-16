@@ -4,6 +4,7 @@ import { expireExpiredPendingOrders } from '../../../lib/expireOrders'
 import { getReportStats } from '../../../lib/reportStats'
 import { generateReportPdf } from '../../../lib/reportPdf'
 import { getEventById, formatEventDisplay } from '../../../lib/events'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,6 +13,8 @@ export const dynamic = 'force-dynamic'
 // Filter: ?event=<id> (jika kosong = event aktif otomatis / semua data).
 export async function GET(request: Request) {
   try {
+    const auth = requireRole(request, ['superadmin'])
+    if ('response' in auth) return auth.response
     const supabase = getServerSupabase()
     await expireExpiredPendingOrders(supabase)
 

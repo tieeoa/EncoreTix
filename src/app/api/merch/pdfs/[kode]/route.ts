@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../../lib/supabaseClient'
 import { generateMerchPdf, type MerchPdfData } from '../../../../lib/merchPdf'
-import { getEventById, formatEventDisplay } from '../../../../lib/events'
+import { getEventById, formatEventDisplay, getActiveEvent } from '../../../../lib/events'
 import { resolveMerchGroup, buildMerchGroupData } from '../../../../lib/merchGroup'
 
 export const dynamic = 'force-dynamic'
@@ -27,6 +27,23 @@ export async function GET(
     }
 
     const first = resolved.rows[0]
+
+    // Bukti pengambilan hanya untuk pesanan lunas dan event yang sedang berlangsung.
+    if (first.status_bayar !== 'berhasil') {
+      return NextResponse.json(
+        { error: 'Pesanan belum lunas. Bukti pengambilan tersedia setelah pembayaran berhasil.' },
+        { status: 403 }
+      )
+    }
+    const activeEvent = await getActiveEvent(supabase)
+    const orderEventId = first.merchandise?.id_event ?? null
+    if (activeEvent && orderEventId && String(orderEventId) !== String(activeEvent.id)) {
+      return NextResponse.json(
+        { error: `Pesanan ini bukan untuk${activeEvent.nama_event ? ` "${activeEvent.nama_event}"` : ' event yang sedang berlangsung'}.` },
+        { status: 403 }
+      )
+    }
+
     const group = buildMerchGroupData(resolved.rows, resolved.groupCode)
     // group.customers sudah memakai snapshot pesanan (nama/email sesuai checkout).
     const cust = group.customers

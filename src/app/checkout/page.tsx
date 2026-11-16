@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useRef, Suspense } from 'react'
-import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { usePaymentCountdown, clearPaymentCountdown } from '../lib/paymentTimer'
@@ -9,8 +8,21 @@ import PaymentTimerBanner from '@/components/PaymentTimerBanner'
 import PaymentStatusModal from '@/components/PaymentStatusModal'
 import StickyBottomBar from '@/components/StickyBottomBar'
 import LoadingDots from '@/components/LoadingDots'
+import TermsModal from '@/components/TermsModal'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
+import {
+  EMPTY_DIGITS,
+  isValidIdentitas,
+  isValidUsia,
+  isValidWhatsapp,
+  needs16DigitIdentity,
+  sanitizeIdentitas,
+  sanitizeUsia,
+  sanitizeWhatsapp,
+  type DigitString,
+  type JenisIdentitas,
+} from '@/app/lib/formNumbers'
 
 function Input({ label, required, hint, prefixIcon, ...props }: { label: string; required?: boolean; hint?: React.ReactNode; prefixIcon?: React.ReactNode } & React.InputHTMLAttributes<HTMLInputElement>) {
   return (
@@ -30,12 +42,12 @@ function Input({ label, required, hint, prefixIcon, ...props }: { label: string;
           className={`w-full border border-gray-200 rounded-lg py-2.5 text-sm focus:outline-none focus:border-gray-400 ${prefixIcon ? 'pl-16 pr-3' : 'px-3'}`} 
         />
       </div>
-      {hint && <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">{hint}</p>}
+      {hint && <p className="text-[11px] text-red-500 mt-1">{hint}</p>}
     </div>
   )
 }
 
-function Select({ label, required, options, ...props }: { label?: string; required?: boolean; options: string[] } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+function Select({ label, required, options, ...props }: { label?: string; required?: boolean; options: readonly string[] } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div>
       {label && (
@@ -63,21 +75,21 @@ interface TicketData {
 interface OwnerData {
   nama: string
   identitas: string
-  jenisIdentitas: string
-  usia: string
+  jenisIdentitas: JenisIdentitas
+  usia: DigitString
   jenisKelamin: 'Laki-laki' | 'Perempuan'
   email: string
-  whatsapp: string
+  whatsapp: DigitString
 }
 
 const EMPTY_OWNER: OwnerData = {
   nama: '',
   identitas: '',
   jenisIdentitas: 'KTP',
-  usia: '',
+  usia: EMPTY_DIGITS,
   jenisKelamin: 'Laki-laki',
   email: '',
-  whatsapp: '',
+  whatsapp: EMPTY_DIGITS,
 }
 
 const ADMIN_FEE_RATE = 0.04
@@ -115,22 +127,18 @@ function validateOwnerData(o: OwnerData, label: string, t: (x: { ID: string; EN:
   if (o.nama.trim().length < 2) {
     return msg(`Nama lengkap ${label} wajib diisi.`, `Full name for ${label} is required.`)
   }
-  const ident = o.identitas.trim()
-  if (o.jenisIdentitas === 'KTP' || o.jenisIdentitas === 'SIM') {
-    if (!/^\d{16}$/.test(ident)) {
-      return msg(
-        `Nomor identitas ${o.jenisIdentitas} ${label} harus 16 digit angka.`,
-        `Your ${o.jenisIdentitas} number for ${label} must be 16 digits.`
-      )
-    }
-  } else if (ident.length < 4) {
+  const is16 = needs16DigitIdentity(o.jenisIdentitas)
+  if (!isValidIdentitas(o.identitas, o.jenisIdentitas)) {
     return msg(
-      `Nomor identitas ${o.jenisIdentitas} ${label} tidak valid.`,
-      `Your ${o.jenisIdentitas} number for ${label} is invalid.`
+      is16
+        ? `Nomor identitas ${o.jenisIdentitas} ${label} harus 16 digit angka.`
+        : `Nomor identitas ${o.jenisIdentitas} ${label} tidak valid.`,
+      is16
+        ? `Your ${o.jenisIdentitas} number for ${label} must be 16 digits.`
+        : `Your ${o.jenisIdentitas} number for ${label} is invalid.`
     )
   }
-  const usia = Number(o.usia)
-  if (!Number.isInteger(usia) || usia < 1 || usia > 120) {
+  if (!isValidUsia(o.usia)) {
     return msg(
       `Usia ${label} tidak valid. Masukkan angka antara 1-120.`,
       `Invalid age for ${label}. Enter a number between 1-120.`
@@ -139,9 +147,7 @@ function validateOwnerData(o: OwnerData, label: string, t: (x: { ID: string; EN:
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(o.email.trim())) {
     return msg(`Format email ${label} tidak valid.`, `Invalid email format for ${label}.`)
   }
-  const wa = o.whatsapp.replace(/[\s-]/g, '')
-  // Terima: 81234567890, +6281234567890, 081234567890
-  if (!/^(?:(?:\+?62|0)8\d{8,11}|8\d{8,11})$/.test(wa)) {
+  if (!isValidWhatsapp(o.whatsapp)) {
     return msg(
       `Nomor WhatsApp ${label} tidak valid. Contoh: 81234567890, 081234567890, atau +6281234567890.`,
       `Invalid WhatsApp number for ${label}. e.g. 81234567890.`
@@ -170,6 +176,7 @@ function CheckoutContent() {
   const [loadingTicket, setLoadingTicket] = useState(!tiketId)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState(tiketId ? '' : t({ ID: 'ID tiket tidak ditemukan.', EN: 'Ticket ID not found.' }))
+  const [showTerms, setShowTerms] = useState(false)
 
   const { remaining, isExpired } = usePaymentCountdown(false, false)
 
@@ -272,7 +279,7 @@ function CheckoutContent() {
   // Kalkulasi total dengan pengurang diskon (jangan sampai minus)
   const total = Math.max(0, subtotal + adminFee - discount)
 
-  const isLengthChecked = pemesan.jenisIdentitas === 'KTP' || pemesan.jenisIdentitas === 'SIM'
+  const isLengthChecked = needs16DigitIdentity(pemesan.jenisIdentitas)
   const identitasHint =
     isLengthChecked && pemesan.identitas.length > 0 && pemesan.identitas.trim().length !== 16
       ? `Nomor identitas ${pemesan.jenisIdentitas} harus 16 digit`
@@ -409,15 +416,21 @@ body: JSON.stringify({
                     <label className="block text-xs font-medium text-gray-600 mb-1.5">{t({ ID: 'Identitas', EN: 'Identity' })} <span className="text-red-500">*</span></label>
                     <div className="flex flex-col sm:flex-row gap-3">
                       <div className="w-full sm:w-1/3">
-                        <Select options={['KTP', 'SIM', 'Kartu Pelajar', 'Paspor']} value={pemesan.jenisIdentitas} onChange={(e) => setPemesan({ ...pemesan, jenisIdentitas: e.target.value })} />
+                        <Select options={['KTP', 'SIM', 'Kartu Pelajar', 'Paspor']} value={pemesan.jenisIdentitas} onChange={(e) => {
+                          const jenisIdentitas = e.target.value as JenisIdentitas
+                          setPemesan({ ...pemesan, jenisIdentitas, identitas: sanitizeIdentitas(pemesan.identitas, jenisIdentitas) })
+                        }} />
                       </div>
                       <div className="w-full sm:w-2/3">
                         <input 
                           required 
                           placeholder={t({ ID: 'Nomor Identitas', EN: 'Identity Number' })} 
+                          inputMode={isLengthChecked ? 'numeric' : 'text'}
+                          pattern={isLengthChecked ? '[0-9]*' : '[A-Za-z0-9]*'}
+                          maxLength={isLengthChecked ? 16 : 20}
                           className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                           value={pemesan.identitas} 
-                          onChange={(e) => setPemesan({ ...pemesan, identitas: e.target.value })} 
+                          onChange={(e) => setPemesan({ ...pemesan, identitas: sanitizeIdentitas(e.target.value, pemesan.jenisIdentitas) })} 
                         />
                       </div>
                     </div>
@@ -444,12 +457,12 @@ body: JSON.stringify({
                     </div>
                   </div>
 
-                  <Input label={t({ ID: 'Usia', EN: 'Age' })} type="number" required value={pemesan.usia} onChange={(e) => setPemesan({ ...pemesan, usia: e.target.value })} />
+                  <Input label={t({ ID: 'Usia', EN: 'Age' })} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={3} required value={pemesan.usia} onChange={(e) => setPemesan({ ...pemesan, usia: sanitizeUsia(e.target.value) })} />
                   <Input 
                     label={t({ ID: 'Email', EN: 'Email' })} 
                     type="email" 
                     required 
-                    hint={<><span className="text-gray-400">i</span> {t({ ID: 'Tiket akan dikirimkan ke email ini', EN: 'The ticket will be sent to this email' })}</>}
+                    hint={t({ ID: 'Tiket akan dikirimkan ke email ini', EN: 'The ticket will be sent to this email' })}
                     value={pemesan.email} 
                     onChange={(e) => setPemesan({ ...pemesan, email: e.target.value })} 
                   />
@@ -457,9 +470,12 @@ body: JSON.stringify({
   label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })} 
   required 
   type="tel"
+  inputMode="tel"
+  pattern="[0-9]*"
+  maxLength={13}
   prefixIcon={<span className="text-gray-500 text-xs font-medium flex items-center gap-1">+62</span>}
   value={pemesan.whatsapp}
-  onChange={(e) => setPemesan({ ...pemesan, whatsapp: e.target.value })}
+  onChange={(e) => setPemesan({ ...pemesan, whatsapp: sanitizeWhatsapp(e.target.value) })}
 />
                 </div>
               </div>
@@ -535,19 +551,25 @@ body: JSON.stringify({
                             <label className="block text-xs font-medium text-gray-600 mb-1.5">{t({ ID: 'Identitas', EN: 'Identity' })} <span className="text-red-500">*</span></label>
                             <div className="flex flex-col sm:flex-row gap-3">
                               <div className="w-full sm:w-1/3">
-                                <Select options={['KTP', 'SIM', 'Kartu Pelajar', 'Paspor']} value={o.jenisIdentitas} onChange={(e) => updateOwner(i, { jenisIdentitas: e.target.value })} />
+                                <Select options={['KTP', 'SIM', 'Kartu Pelajar', 'Paspor']} value={o.jenisIdentitas} onChange={(e) => {
+                                  const jenisIdentitas = e.target.value as JenisIdentitas
+                                  updateOwner(i, { jenisIdentitas, identitas: sanitizeIdentitas(o.identitas, jenisIdentitas) })
+                                }} />
                               </div>
                               <div className="w-full sm:w-2/3">
                                 <input
                                   required
                                   placeholder={t({ ID: 'Nomor Identitas', EN: 'Identity Number' })}
+                                  inputMode={needs16DigitIdentity(o.jenisIdentitas) ? 'numeric' : 'text'}
+                                  pattern={needs16DigitIdentity(o.jenisIdentitas) ? '[0-9]*' : '[A-Za-z0-9]*'}
+                                  maxLength={needs16DigitIdentity(o.jenisIdentitas) ? 16 : 20}
                                   className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                                   value={o.identitas}
-                                  onChange={(e) => updateOwner(i, { identitas: e.target.value })}
+                                  onChange={(e) => updateOwner(i, { identitas: sanitizeIdentitas(e.target.value, o.jenisIdentitas) })}
                                 />
                               </div>
                             </div>
-                            {(o.jenisIdentitas === 'KTP' || o.jenisIdentitas === 'SIM') && o.identitas.length > 0 && o.identitas.trim().length !== 16 && (
+                            {needs16DigitIdentity(o.jenisIdentitas) && o.identitas.length > 0 && o.identitas.trim().length !== 16 && (
                               <p className="text-[11px] text-red-500 mt-1">{t({ ID: 'Nomor identitas harus 16 digit', EN: 'Identity number must be 16 digits' })}</p>
                             )}
                           </div>
@@ -574,7 +596,7 @@ body: JSON.stringify({
                             </div>
                           </div>
 
-                          <Input label={t({ ID: 'Usia', EN: 'Age' })} type="number" required value={o.usia} onChange={(e) => updateOwner(i, { usia: e.target.value })} />
+                          <Input label={t({ ID: 'Usia', EN: 'Age' })} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={3} required value={o.usia} onChange={(e) => updateOwner(i, { usia: sanitizeUsia(e.target.value) })} />
                           <Input
                             label={t({ ID: 'Email', EN: 'Email' })}
                             type="email"
@@ -586,9 +608,12 @@ body: JSON.stringify({
                             label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })}
                             required
                             type="tel"
+                            inputMode="tel"
+                            pattern="[0-9]*"
+                            maxLength={13}
                             prefixIcon={<span className="text-gray-500 text-xs font-medium">+62</span>}
                             value={o.whatsapp}
-                            onChange={(e) => updateOwner(i, { whatsapp: e.target.value })}
+                            onChange={(e) => updateOwner(i, { whatsapp: sanitizeWhatsapp(e.target.value) })}
                           />
                         </div>
                       </div>
@@ -689,7 +714,7 @@ body: JSON.stringify({
               </button>
               
               <p className="text-[11px] text-gray-400 mt-2 text-center">
-                {t({ ID: 'Dengan melanjutkan, kamu menyetujui', EN: 'By continuing, you agree to' })} <Link href="#" className="underline">{t({ ID: 'Syarat & Ketentuan', EN: 'Terms & Conditions' })}</Link>.
+                {t({ ID: 'Dengan melanjutkan, kamu menyetujui', EN: 'By continuing, you agree to' })} <button type="button" onClick={() => setShowTerms(true)} className="underline">{t({ ID: 'Syarat & Ketentuan', EN: 'Terms & Conditions' })}</button>.
               </p>
             </div>
           </div>
@@ -719,6 +744,7 @@ body: JSON.stringify({
         actionLabel={t({ ID: 'Ulangi Pesanan', EN: 'Repeat Order' })}
         onAction={() => router.push('/tiket')}
       />
+      <TermsModal open={showTerms} onClose={() => setShowTerms(false)} />
     </>
   )
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
 import { MERCH_SIZES, sizeColumn, withSisaStok } from '../../lib/merchStok'
 import { resolveEventId } from '../../lib/events'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -34,6 +35,8 @@ export async function GET(request: Request) {
 // Body: { ..., event?: string } / event kosong = event aktif.
 export async function POST(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const body = await request.json()
     if (!body.nama_merch || !body.harga) {
       return NextResponse.json({ error: 'Nama dan harga wajib diisi' }, { status: 400 })

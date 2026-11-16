@@ -55,16 +55,16 @@ function Countdown({ target }: { target: Date | null }) {
   if (!target) return null
 
   return (
-    <div className="flex gap-2 md:gap-3 text-center text-white">
+    <div className="flex gap-1.5 sm:gap-2 md:gap-3 text-center text-white">
       {[
         [t({ ID: 'Hari', EN: 'Days' }), c.hari],
         [t({ ID: 'Jam', EN: 'Hours' }), c.jam],
         [t({ ID: 'Menit', EN: 'Minutes' }), c.menit],
         [t({ ID: 'Detik', EN: 'Seconds' }), c.detik],
       ].map(([label, val]) => (
-        <div key={String(label)} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-xl px-2.5 py-1.5 md:px-3 md:py-2 min-w-[54px] md:min-w-[60px] shadow-lg shadow-black/20">
-          <div className="text-base md:text-xl font-bold tabular-nums leading-none">{String(val).padStart(2, '0')}</div>
-          <div className="text-[9px] md:text-[10px] uppercase tracking-widest text-indigo-200 mt-1">{String(label)}</div>
+        <div key={String(label)} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-lg sm:rounded-xl px-2 py-1.5 md:px-3 md:py-2 min-w-[46px] sm:min-w-[54px] md:min-w-[60px] shadow-lg shadow-black/20">
+          <div className="text-sm sm:text-base md:text-xl font-bold tabular-nums leading-none">{String(val).padStart(2, '0')}</div>
+          <div className="text-[8px] sm:text-[9px] md:text-[10px] uppercase tracking-widest text-indigo-200 mt-1">{String(label)}</div>
         </div>
       ))}
     </div>
@@ -223,7 +223,7 @@ export default function Home() {
         </div>
       )}
       {/* Hero */}
-      <div className="relative rounded-3xl overflow-hidden min-h-[360px] md:h-[420px] flex shadow-2xl shadow-indigo-950/30">
+      <div className="relative rounded-3xl overflow-hidden min-h-[300px] md:h-[420px] flex shadow-2xl shadow-indigo-950/30">
         <Image
           src={posterSrc}
           alt={heroTitle}
@@ -238,11 +238,11 @@ export default function Home() {
         <div className="absolute -top-24 -right-24 w-96 h-96 bg-indigo-600/30 blur-3xl rounded-full pointer-events-none" />
         <div className="absolute bottom-0 -left-20 w-72 h-72 bg-violet-600/20 blur-3xl rounded-full pointer-events-none" />
 
-        <div className="relative mt-auto w-full p-6 md:p-10 flex flex-col md:flex-row md:items-end gap-6 justify-between">
+        <div className="relative mt-auto w-full p-5 sm:p-6 md:p-10 flex flex-col md:flex-row md:items-end gap-4 sm:gap-6 justify-between">
           <div className="max-w-2xl">
             {/* Badge status */}
             {event ? (
-              <span className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-widest uppercase text-emerald-200 bg-emerald-400/15 backdrop-blur-md border border-emerald-300/30 px-3 py-1.5 rounded-full mb-4">
+              <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-emerald-200 bg-emerald-400/15 backdrop-blur-md border border-emerald-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-300" />
@@ -250,20 +250,26 @@ export default function Home() {
                 {t({ ID: 'Tiket Tersedia', EN: 'Tickets Available' })}
               </span>
             ) : (
-              <span className="inline-flex items-center gap-2 text-[11px] font-semibold tracking-widest uppercase text-amber-200 bg-amber-400/15 backdrop-blur-md border border-amber-300/30 px-3 py-1.5 rounded-full mb-4">
+              <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-amber-200 bg-amber-400/15 backdrop-blur-md border border-amber-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
                 {t({ ID: 'Segera Diumumkan', EN: 'Coming Soon' })}
               </span>
             )}
 
-            <h1 className={`${bebasNeue.className} text-4xl sm:text-5xl md:text-7xl text-white tracking-wide leading-[0.9] drop-shadow-lg break-words`}>
+            <h1 className={`${bebasNeue.className} text-3xl sm:text-5xl md:text-7xl text-white tracking-wide leading-[0.95] drop-shadow-lg break-words`}>
               {heroTitle}
             </h1>
 
             {/* Chip info tanggal / venue / jam */}
             {event && (
-              <div className="flex flex-wrap items-center gap-2 mt-4">
+              <>
+                <p className="sm:hidden mt-3 text-[11px] leading-relaxed text-white/85">
+                  {[event.tanggal ? formatTanggal(event.tanggal) : '', eventLokasi(event), eventJam(event)]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </p>
+                <div className="hidden sm:flex flex-wrap items-center gap-1.5 sm:gap-2 mt-3">
                 {event.tanggal && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-3 py-1.5 rounded-full">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full">
                     <svg className="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
                     </svg>
@@ -271,7 +277,7 @@ export default function Home() {
                   </span>
                 )}
                 {eventLokasi(event) && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-3 py-1.5 rounded-full">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full">
                     <svg className="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
@@ -280,14 +286,15 @@ export default function Home() {
                   </span>
                 )}
                 {eventJam(event) && (
-                  <span className="inline-flex items-center gap-1.5 text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-3 py-1.5 rounded-full">
+                  <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full">
                     <svg className="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                     {eventJam(event)}
                   </span>
                 )}
-              </div>
+                </div>
+              </>
             )}
             {!event && (
               <p className="text-sm text-gray-300 mt-4">{heroSubtitle}</p>
@@ -295,10 +302,10 @@ export default function Home() {
 
             {/* CTA */}
             {event && (
-              <div className="flex flex-wrap items-center gap-3 mt-6">
+              <div className="hidden sm:flex flex-wrap items-center gap-2.5 sm:gap-3 mt-5">
                 <Link
                   href="/tiket"
-                  className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold px-7 py-3.5 rounded-full transition-all shadow-lg shadow-indigo-950/50 hover:shadow-indigo-900/60 hover:-translate-y-0.5"
+                  className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold px-5 py-3 sm:px-7 sm:py-3.5 rounded-full transition-all shadow-lg shadow-indigo-950/50 hover:shadow-indigo-900/60 hover:-translate-y-0.5"
                 >
                   {t({ ID: 'Beli Tiket Sekarang', EN: 'Buy Tickets Now' })}
                   <span aria-hidden>→</span>
@@ -306,7 +313,7 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => scrollToSection('Line Up')}
-                  className="inline-flex items-center gap-2 text-white text-sm font-semibold px-7 py-3.5 rounded-full border border-white/30 bg-white/5 backdrop-blur-md hover:bg-white/15 transition-all cursor-pointer"
+                  className="hidden sm:inline-flex items-center gap-2 text-white text-sm font-semibold px-7 py-3.5 rounded-full border border-white/30 bg-white/5 backdrop-blur-md hover:bg-white/15 transition-all cursor-pointer"
                 >
                   {t({ ID: 'Lihat Line Up', EN: 'View Line Up' })}
                 </button>
@@ -315,7 +322,7 @@ export default function Home() {
           </div>
 
           <div className="shrink-0">
-            <p className="text-[10px] font-semibold tracking-[0.25em] uppercase text-indigo-200 mb-2">
+            <p className="hidden sm:block text-[10px] font-semibold tracking-[0.25em] uppercase text-indigo-200 mb-2">
               {t({ ID: 'Menghitung mundur', EN: 'Counting down' })}
             </p>
             <Countdown target={countdownTarget} />
@@ -324,7 +331,7 @@ export default function Home() {
       </div>
 
       {/* Content + Sidebar */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 mt-10">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 lg:gap-10 mt-8 sm:mt-10">
         <div className="lg:col-span-2">
           
           {/* TABS Navigation */}
@@ -333,7 +340,7 @@ export default function Home() {
               <button
                 key={tab}
                 onClick={() => scrollToSection(tab)}
-                className={`pb-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`pb-2.5 sm:pb-3 text-[13px] sm:text-sm font-medium border-b-2 transition-colors ${
                   activeTab === tab
                     ? 'border-gray-900 text-gray-900'
                     : 'border-transparent text-gray-400 hover:text-gray-600'
@@ -345,10 +352,10 @@ export default function Home() {
           </div>
 
           {/* ALL CONTENT RENDERED BELOW */}
-          <div className="mt-6 space-y-12 pb-12">
+          <div className="mt-5 sm:mt-6 space-y-8 sm:space-y-12 pb-10 sm:pb-12">
             
             {/* Section Deskripsi */}
-            <div id="section-deskripsi" className="space-y-6 text-base text-gray-600 leading-[1.8] scroll-mt-6">
+            <div id="section-deskripsi" className="space-y-5 text-[15px] sm:text-base text-gray-600 leading-[1.75] sm:leading-[1.8] scroll-mt-6">
               {event?.deskripsi ? (
                 <p className="whitespace-pre-line">{event.deskripsi}</p>
               ) : (
@@ -364,15 +371,12 @@ export default function Home() {
 
             {/* Section Syarat & Ketentuan */}
             <div id="section-syarat" className="scroll-mt-6">
-<h2 className="text-xl font-bold text-gray-900 mb-4">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">
                 {t({ ID: 'Syarat dan Ketentuan', EN: 'Terms and Conditions' })}
               </h2>
-              <h3 className="text-base font-semibold text-gray-900 mb-4">
-                {t({ ID: 'Syarat & Ketentuan Pembelian Tiket', EN: 'Ticket Purchase Terms & Conditions' })}
-              </h3>
 
               {event?.syarat_ketentuan ? (
-                <div className="space-y-4 text-base text-gray-600">
+                <div className="space-y-3 sm:space-y-4 text-[15px] sm:text-base text-gray-600">
                   {event.syarat_ketentuan.split('\n').filter((s) => s.trim()).map((s, i) => (
                     <p key={i} className="pl-5">{i + 1}. {s}</p>
                   ))}
@@ -390,7 +394,7 @@ export default function Home() {
 
             {/* Section Line Up */}
             <div id="section-lineup" className="scroll-mt-6">
-              <h3 className="font-semibold text-gray-900 mb-4">{t({ ID: 'Line Up', EN: 'Line Up' })}</h3>
+              <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4">{t({ ID: 'Line Up', EN: 'Line Up' })}</h3>
               {!event ? (
                 <p className="text-sm text-gray-400">{noEventText}</p>
               ) : lineUp.length === 0 ? (
@@ -419,8 +423,8 @@ export default function Home() {
           </div>
         </div>
 
-        {/* Sidebar */}
-        <div className="lg:col-span-1">
+        {/* Sidebar — disembunyikan di HP karena hero + sticky bar sudah punya info & CTA */}
+        <div className="hidden lg:block lg:col-span-1">
           <div className="lg:sticky lg:top-20 space-y-4">
             <div className="border border-gray-200 rounded-xl overflow-hidden">
             <div className="relative h-40 w-full">
@@ -433,7 +437,7 @@ export default function Home() {
               />
             </div>
 
-            <div className="p-5">
+            <div className="p-4 sm:p-5">
               <span className="inline-block bg-gray-100 text-gray-600 text-xs font-medium px-2.5 py-1 rounded-full mb-3">
                 {heroTitle}
               </span>
@@ -515,13 +519,13 @@ export default function Home() {
 
       {/* Section Event Sebelumnya */}
       {finished.length > 0 && (
-        <div className="mt-16">
-          <div className="flex items-end justify-between mb-6">
+        <div className="mt-12 sm:mt-16">
+          <div className="flex items-end justify-between mb-4 sm:mb-6">
             <div>
-              <h2 className="text-2xl font-bold text-gray-900 tracking-tight">
+              <h2 className="text-xl sm:text-2xl font-bold text-gray-900 tracking-tight">
                 {t({ ID: 'Event Sebelumnya', EN: 'Previous Events' })}
               </h2>
-              <p className="text-sm text-gray-500 mt-1">
+              <p className="hidden sm:block text-sm text-gray-500 mt-1">
                 {t({ ID: 'Rekap edisi CoravFest yang sudah selesai', EN: 'Recap of previous CoravFest editions' })}
               </p>
             </div>

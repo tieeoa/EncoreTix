@@ -5,6 +5,7 @@ import { sendTicketEmailForBooking } from '../../../lib/ticketSender'
 import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../lib/rateLimit'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 import { parseJsonArray, resolvePemesan, mergeHolder, type PartySnapshot, type HolderInfo } from '@/app/lib/orderSnapshot'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -100,6 +101,8 @@ export async function PATCH(
   if (!rl.allowed) return rateLimitResponse(rl.resetAt)
 
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const { bookingCode } = await params
     const { bookingCode: baseCode, ticketIndex } = parseTicketCode(decodeURIComponent(bookingCode))
     const body = await request.json()
@@ -202,6 +205,8 @@ export async function POST(
   { params }: { params: Promise<{ bookingCode: string }> }
 ) {
   try {
+    const auth = requireRole(_request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const { bookingCode } = await params
     const { bookingCode: baseCode } = parseTicketCode(decodeURIComponent(bookingCode))
     const supabase = getServerSupabase()

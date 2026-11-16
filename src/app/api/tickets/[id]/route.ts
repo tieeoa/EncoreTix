@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay } from '../../../lib/events'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const { id } = await params
     const body = await request.json()
     const supabase = getServerSupabase()
@@ -65,6 +68,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = requireRole(_request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const { id } = await params
     const supabase = getServerSupabase()
     const { error } = await supabase.from('tiket').delete().eq('id', id)

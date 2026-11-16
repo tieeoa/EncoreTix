@@ -4,6 +4,7 @@ import { usePathname } from 'next/navigation'
 import { LanguageProvider } from '@/lib/i18n'
 import Navbar from './Navbar'
 import Footer from './Footer'
+import ChatBot from '../ChatBot'
 
 export default function SiteChrome({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
@@ -16,6 +17,7 @@ export default function SiteChrome({ children }: { children: React.ReactNode }) 
       <Navbar />
       <main className="flex-1">{children}</main>
       <Footer />
+      <ChatBot />
     </LanguageProvider>
   )
 }

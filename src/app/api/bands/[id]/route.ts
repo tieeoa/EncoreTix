@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +16,8 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = requireRole(request, ['superadmin'])
+    if ('response' in auth) return auth.response
     const { id } = await params
     const body = await request.json()
     if (body.nama_band !== undefined && !body.nama_band) {
@@ -43,6 +46,8 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const auth = requireRole(_request, ['superadmin'])
+    if ('response' in auth) return auth.response
     const { id } = await params
     const supabase = getServerSupabase()
     const { data: used } = await supabase

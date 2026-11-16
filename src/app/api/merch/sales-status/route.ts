@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { resolveEventId, getEventById, isEventFinished } from '../../../lib/events'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -32,6 +33,8 @@ export async function GET(request: Request) {
 // semua produk merchandise event terpilih sekaligus.
 export async function POST(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const body = await request.json()
     const closed = !!body.closed
     const status = closed ? 'nonaktif' : 'aktif'

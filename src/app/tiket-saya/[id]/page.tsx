@@ -64,7 +64,14 @@ interface PesananData {
     jenis_identitas: string | null
     jenis_kelamin: string | null
   } | null
-  tiket: { kategori: string; harga: number } | null
+  tiket: { kategori: string; harga: number; id_event?: string | null } | null
+  event?: {
+    nama_event: string
+    tanggal: string
+    jam: string
+    lokasi: string
+    gambar: string | null
+  } | null
   pemilik_tiket?: Array<{
     nama: string | null
     email: string | null
@@ -95,6 +102,7 @@ export default function TiketDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [currentIndex, setCurrentIndex] = useState(0)
+  const [activeEvent, setActiveEvent] = useState<{ id: string; nama_event: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/events?active=true')
@@ -102,6 +110,7 @@ export default function TiketDetailPage() {
       .then((res) => {
         const ev = res.data
         if (!ev) return
+        setActiveEvent({ id: String(ev.id), nama_event: ev.nama_event || '' })
         setEventInfo({
           nama_event: ev.nama_event || DEFAULT_EVENT.nama_event,
           tanggal: formatEventDate(ev.tanggal),
@@ -152,6 +161,21 @@ export default function TiketDetailPage() {
 
   const currentTicket = tickets[currentIndex] || tickets[0]
 
+  const displayEvent: EventInfo = booking?.event
+    ? {
+        nama_event: booking.event.nama_event || DEFAULT_EVENT.nama_event,
+        tanggal: booking.event.tanggal || DEFAULT_EVENT.tanggal,
+        jam: booking.event.jam || DEFAULT_EVENT.jam,
+        lokasi: booking.event.lokasi || DEFAULT_EVENT.lokasi,
+        gambar: booking.event.gambar || DEFAULT_EVENT.gambar,
+      }
+    : eventInfo
+
+  const bookingEventId = booking?.tiket?.id_event ?? null
+  const wrongEvent = Boolean(
+    activeEvent?.id && bookingEventId && String(bookingEventId) !== String(activeEvent.id)
+  )
+
   const handlePrev = () => {
     if (currentIndex > 0) setCurrentIndex(currentIndex - 1)
   }
@@ -172,6 +196,21 @@ export default function TiketDetailPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4">
         <p className="text-red-500 text-sm font-medium">{error}</p>
+        <button onClick={() => router.push('/tiket-saya')} className="text-xs text-blue-600 underline">
+          {t({ ID: 'Kembali ke Tiket Saya', EN: 'Back to My Tickets' })}
+        </button>
+      </div>
+    )
+  }
+
+  // Tiket hanya boleh ditampilkan untuk event yang sedang berlangsung.
+  // Kode booking milik event lain ditolak agar tidak bisa "dicek" di event ini.
+  if (wrongEvent) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+          {t({ ID: 'Tiket Bukan untuk Event Ini', EN: 'Ticket Is for Another Event' })}
+        </h1>
         <button onClick={() => router.push('/tiket-saya')} className="text-xs text-blue-600 underline">
           {t({ ID: 'Kembali ke Tiket Saya', EN: 'Back to My Tickets' })}
         </button>
@@ -287,8 +326,8 @@ export default function TiketDetailPage() {
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl overflow-hidden shadow-xs mb-6">
           <div className="relative h-48 sm:h-64 md:h-72 w-full bg-slate-950 overflow-hidden">
             <Image
-              src={eventInfo.gambar}
-              alt={eventInfo.nama_event}
+              src={displayEvent.gambar}
+              alt={displayEvent.nama_event}
               fill
               priority
               className="object-cover object-center opacity-90"
@@ -297,20 +336,20 @@ export default function TiketDetailPage() {
 
             <div className="absolute bottom-5 left-5 sm:left-8">
               <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white drop-shadow-md tracking-tight">
-                {eventInfo.nama_event}
+                {displayEvent.nama_event}
               </h1>
             </div>
           </div>
 
           <div className="px-5 sm:px-8 py-3.5 sm:py-4 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 flex flex-wrap items-center justify-between gap-3 sm:gap-6 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
             <div className="flex items-center gap-1">
-              <span className="font-medium">{eventInfo.tanggal}</span>
+              <span className="font-medium">{displayEvent.tanggal}</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="font-medium">{eventInfo.jam}</span>
+              <span className="font-medium">{displayEvent.jam}</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="font-medium">{eventInfo.lokasi}</span>
+              <span className="font-medium">{displayEvent.lokasi}</span>
             </div>
           </div>
         </div>

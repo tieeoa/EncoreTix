@@ -23,8 +23,17 @@ interface MerchBooking {
   subtotal: number
   admin_fee: number
   total_harga: number
+  status_bayar: string
   status_pengambilan: string
   alamat: string | null
+  event_id?: string | null
+  event?: {
+    nama_event: string
+    tanggal: string
+    jam: string
+    lokasi: string
+    gambar: string | null
+  } | null
   customers: { nama: string; email: string; no_hp: string | null; usia: number | null; jenis_kelamin: string | null; no_identitas: string | null } | null
   items: MerchItem[]
 }
@@ -76,6 +85,7 @@ export default function MerchDetailPage() {
   const [eventInfo, setEventInfo] = useState<EventInfo>(DEFAULT_EVENT)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [activeEvent, setActiveEvent] = useState<{ id: string; nama_event: string } | null>(null)
 
   useEffect(() => {
     fetch('/api/events?active=true')
@@ -83,6 +93,7 @@ export default function MerchDetailPage() {
       .then((res) => {
         const ev = res.data
         if (!ev) return
+        setActiveEvent({ id: String(ev.id), nama_event: ev.nama_event || '' })
         setEventInfo({
           nama_event: ev.nama_event || DEFAULT_EVENT.nama_event,
           tanggal: formatEventDate(ev.tanggal),
@@ -118,6 +129,70 @@ export default function MerchDetailPage() {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4">
         <p className="text-red-500 text-sm font-medium">{error}</p>
+        <button onClick={() => router.push('/merch-saya')} className="text-xs text-blue-600 underline">
+          {t({ ID: 'Kembali ke Merch Saya', EN: 'Back to My Merch' })}
+        </button>
+      </div>
+    )
+  }
+
+  const displayEvent: EventInfo = booking.event
+    ? {
+        nama_event: booking.event.nama_event || DEFAULT_EVENT.nama_event,
+        tanggal: booking.event.tanggal || DEFAULT_EVENT.tanggal,
+        jam: booking.event.jam || DEFAULT_EVENT.jam,
+        lokasi: booking.event.lokasi || DEFAULT_EVENT.lokasi,
+        gambar: booking.event.gambar || DEFAULT_EVENT.gambar,
+      }
+    : eventInfo
+
+  const wrongEvent = Boolean(
+    activeEvent?.id &&
+      booking.event_id &&
+      String(booking.event_id) !== String(activeEvent.id)
+  )
+
+  if (wrongEvent) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+          {t({ ID: 'Pesanan Bukan untuk Event Ini', EN: 'Order Is for Another Event' })}
+        </h1>
+        <button onClick={() => router.push('/merch-saya')} className="text-xs text-blue-600 underline">
+          {t({ ID: 'Kembali ke Merch Saya', EN: 'Back to My Merch' })}
+        </button>
+      </div>
+    )
+  }
+
+  if (booking.status_bayar !== 'berhasil') {
+    const gagal = booking.status_bayar === 'gagal'
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-3 px-4 text-center">
+        <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+          {gagal
+            ? t({ ID: 'Pesanan Gagal / Kedaluwarsa', EN: 'Order Failed / Expired' })
+            : t({ ID: 'Pembayaran Belum Selesai', EN: 'Payment Not Completed' })}
+        </h1>
+        <p className="max-w-md text-sm text-gray-500 dark:text-gray-400">
+          {gagal
+            ? t({
+                ID: 'Pesanan ini dibatalkan karena pembayaran tidak diselesaikan tepat waktu. Silakan pesan merchandise baru.',
+                EN: 'This order was cancelled because payment was not completed in time. Please place a new order.',
+              })
+            : t({
+                ID: 'QR pengambilan dan bukti pengambilan baru tersedia setelah pembayaran dikonfirmasi.',
+                EN: 'The pickup QR and proof are available only after payment is confirmed.',
+              })}
+        </p>
+        {!gagal && (
+          <button
+            onClick={() => router.push(`/payment/merch?booking=${encodeURIComponent(booking.kode_pesanan)}`)}
+            className="rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-700"
+          >
+            {t({ ID: 'Lanjutkan Pembayaran', EN: 'Continue Payment' })}
+          </button>
+        )}
         <button onClick={() => router.push('/merch-saya')} className="text-xs text-blue-600 underline">
           {t({ ID: 'Kembali ke Merch Saya', EN: 'Back to My Merch' })}
         </button>
@@ -163,8 +238,8 @@ export default function MerchDetailPage() {
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-3xl overflow-hidden shadow-xs mb-6">
           <div className="relative h-48 sm:h-64 md:h-72 w-full bg-slate-950 overflow-hidden">
             <Image
-              src={eventInfo.gambar}
-              alt={eventInfo.nama_event}
+              src={displayEvent.gambar}
+              alt={displayEvent.nama_event}
               fill
               priority
               className="object-cover object-center opacity-90"
@@ -173,20 +248,20 @@ export default function MerchDetailPage() {
 
             <div className="absolute bottom-5 left-5 sm:left-8">
               <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white drop-shadow-md tracking-tight">
-                {eventInfo.nama_event}
+                {displayEvent.nama_event}
               </h1>
             </div>
           </div>
 
           <div className="px-5 sm:px-8 py-3.5 sm:py-4 bg-white dark:bg-gray-900 border-t border-gray-100 dark:border-gray-800 flex flex-wrap items-center justify-between gap-3 sm:gap-6 text-xs sm:text-sm text-gray-700 dark:text-gray-300">
             <div className="flex items-center gap-1">
-              <span className="font-medium">{eventInfo.tanggal}</span>
+              <span className="font-medium">{displayEvent.tanggal}</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="font-medium">{eventInfo.jam}</span>
+              <span className="font-medium">{displayEvent.jam}</span>
             </div>
             <div className="flex items-center gap-1">
-              <span className="font-medium">{eventInfo.lokasi}</span>
+              <span className="font-medium">{displayEvent.lokasi}</span>
             </div>
           </div>
         </div>
@@ -322,7 +397,7 @@ export default function MerchDetailPage() {
 
               <div className="flex items-center justify-between gap-3 py-1 border-b border-gray-100 dark:border-gray-800 [&>span:last-child]:text-right [&>span:last-child]:min-w-0 [&>span:last-child]:break-words">
                 <span className="text-gray-500 dark:text-gray-400">{t({ ID: 'Lokasi Booth', EN: 'Booth Location' })}</span>
-                <span className="font-semibold text-blue-600 dark:text-blue-400">Booth Official Merch — {eventInfo.lokasi !== '-' ? eventInfo.lokasi : t({ ID: 'lihat info venue pada event', EN: 'see the venue info on the event' })}</span>
+                <span className="font-semibold text-blue-600 dark:text-blue-400">Booth Official Merch — {displayEvent.lokasi !== '-' ? displayEvent.lokasi : t({ ID: 'lihat info venue pada event', EN: 'see the venue info on the event' })}</span>
               </div>
 
               <div className="flex items-start justify-between gap-4 py-1 border-b border-gray-100 dark:border-gray-800">

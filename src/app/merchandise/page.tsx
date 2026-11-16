@@ -6,6 +6,7 @@ import { useLang } from '@/lib/i18n'
 import { MERCH_SIZES, FREE_SIZE, isFreeSizeProduct } from '@/app/lib/merchStok'
 import { friendlyError } from '@/app/lib/fetchError'
 import { MerchCartProvider, CartFab, useMerchCart } from '@/app/lib/merchCart'
+import { clearMerchCheckoutDraft } from '@/app/lib/merchCheckoutDraft'
 
 interface MerchItem {
   id: string
@@ -116,21 +117,25 @@ function MerchandisePageContent() {
   const [products, setProducts] = useState<MerchItem[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [bands, setBands] = useState<Band[]>([])
+  const [eventName, setEventName] = useState('CoravFest')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeCategory, setActiveCategory] = useState('Semua')
 
   useEffect(() => {
+    clearMerchCheckoutDraft()
     Promise.all([
       fetch('/api/merchandise').then((r) => r.json()),
       fetch('/api/kategori').then((r) => r.json()),
       fetch('/api/bands').then((r) => r.json()),
+      fetch('/api/events?active=true').then((r) => r.json()).catch(() => null),
     ])
-      .then(([prodRes, catRes, bandRes]) => {
+      .then(([prodRes, catRes, bandRes, eventRes]) => {
         if (prodRes.error) throw new Error(prodRes.error)
         setProducts((prodRes.data || []) as MerchItem[])
         setCategories(catRes.data || [])
         setBands((bandRes.data || []) as Band[])
+        if (eventRes?.data?.nama_event) setEventName(eventRes.data.nama_event)
       })
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
@@ -202,7 +207,7 @@ function MerchandisePageContent() {
       <div className="relative rounded-2xl overflow-hidden min-h-40 bg-gradient-to-r from-indigo-950 via-slate-900 to-zinc-900 mb-8 flex items-center px-4 sm:px-8 py-6">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_50%,rgba(99,102,241,0.2),transparent_60%)]" />
         <div>
-          <p className="text-indigo-300 text-xs font-semibold tracking-widest uppercase mb-1">CoravFest Vol.1</p>
+          <p className="text-indigo-300 text-xs font-semibold tracking-widest uppercase mb-1">{eventName}</p>
           <p className="text-xl sm:text-2xl font-bold text-white">{t({ ID: 'Official Merchandise Store', EN: 'Official Merchandise Store' })}</p>
           <p className="text-sm text-gray-400 mt-1">{t({ ID: 'Pengambilan merch dilakukan mulai dari jam pemesanan hingga maksimal 1 hari setelahnya', EN: 'Merchandise pickup is available from order time up to at most 1 day after' })}</p>
         </div>
@@ -273,7 +278,7 @@ function MerchandisePageContent() {
               <li>{t({ ID: 'Merchandise hanya dapat dibeli oleh pembeli yang berdomisili di Kota Malang.', EN: 'Merchandise can only be purchased by buyers residing in the city of Malang.' })}</li>
               <li>{t({ ID: 'Pengambilan merchandise dilakukan di booth resmi, mulai dari jam pemesanan hingga maksimal 1 (satu) hari setelahnya.', EN: 'Merchandise pickup is done at the official booth, from order time up to at most 1 (one) day after.' })}</li>
               <li>{t({ ID: 'Pengambilan merch wajib menunjukkan kode pengambilan beserta identitas yang valid.', EN: 'Pickup requires showing the pickup code along with valid ID.' })}</li>
-              <li>{t({ ID: 'Pembelian bersifat first come, first served selama merch tersedia.', EN: 'Purchases are first come, first served while stock lasts.' })}</li>
+              <li>{t({ ID: 'Pembelian bersifat first come, first served selama stok/tiket tersedia.', EN: 'Purchases are first come, first served while stock/tickets are available.' })}</li>
               <li>{t({ ID: 'Merchandise yang sudah dibeli tidak dapat dikembalikan / ditukar kecuali event dibatalkan oleh penyelenggara.', EN: 'Purchased merchandise cannot be returned or exchanged unless the event is cancelled by the organizer.' })}</li>
               <li>{t({ ID: 'Resiko transaksi diluar dari website resmi tidak ditanggung oleh kami.', EN: 'We are not responsible for risks of transactions made outside of the official website.' })}</li>
               <li>{t({ ID: 'Dengan melakukan pembelian, kamu dianggap telah membaca dan menyetujui seluruh syarat & ketentuan ini.', EN: 'By making a purchase, you are deemed to have read and agreed to all of these terms & conditions.' })}</li>

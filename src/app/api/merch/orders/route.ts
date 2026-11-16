@@ -10,6 +10,7 @@ import {
 import { resolveEventId } from '../../../lib/events'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 import { parseJsonObject, type PartySnapshot } from '../../../lib/orderSnapshot'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -101,6 +102,8 @@ export async function POST(request: Request) {
     }
 
     const supabase = getServerSupabase()
+    // Produk hanya boleh dipesan untuk event yang sedang berlangsung.
+    const activeEventId = await resolveEventId(supabase, null)
 
     // Validasi setiap item: ukuran, status produk, stok.
     // Validasi sengaja dilakukan SEBELUM membuat customer agar pesanan yang
@@ -121,10 +124,17 @@ export async function POST(request: Request) {
       }
       const { data: merchData } = await supabase
         .from('merchandise')
-        .select('id, status, harga, stok_s, stok_m, stok_l, stok_xl, stok_xxl')
+        .select('id, status, harga, stok_s, stok_m, stok_l, stok_xl, stok_xxl, id_event')
         .eq('id', item.id_merch)
         .single()
       const merchRec = merchData as Record<string, unknown> | null
+
+      const productEventId = (merchRec?.id_event as string | null | undefined) ?? null
+      if (activeEventId && productEventId && String(productEventId) !== String(activeEventId)) {
+        return NextResponse.json({
+          error: `Item ke-${i + 1}: produk ini bukan untuk event yang sedang berlangsung.`,
+        }, { status: 400 })
+      }
 
       const ukuran = normalizeUkuran(item.ukuran, merchRec ?? undefined)
       if (!ukuran) {
@@ -245,6 +255,8 @@ export async function POST(request: Request) {
 // Filter: ?event=<id> (jika kosong = event aktif otomatis).
 export async function GET(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const supabase = getServerSupabase()
     await expireExpiredPendingOrders(supabase)
     const { searchParams } = new URL(request.url)

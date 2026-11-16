@@ -8,9 +8,24 @@ import PaymentStatusModal from '@/components/PaymentStatusModal'
 import StickyBottomBar from '@/components/StickyBottomBar'
 import LoadingSpinner from '@/components/LoadingSpinner'
 import LoadingDots from '@/components/LoadingDots'
+import TermsModal from '@/components/TermsModal'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
 import { readStoredCart, clearStoredCart } from '@/app/lib/merchCart'
+import { MERCH_CHECKOUT_FORM_KEY } from '@/app/lib/merchCheckoutDraft'
+import {
+  EMPTY_DIGITS,
+  IDENTITAS_OPTIONS,
+  isValidIdentitas,
+  isValidUsia,
+  isValidWhatsapp,
+  needs16DigitIdentity,
+  sanitizeIdentitas,
+  sanitizeUsia,
+  sanitizeWhatsapp,
+  type DigitString,
+  type JenisIdentitas,
+} from '@/app/lib/formNumbers'
 
 const MERCH_SIZES_ARR = ['S', 'M', 'L', 'XL', 'XXL'] as const
 const ADMIN_FEE_RATE = 0.04
@@ -83,9 +98,8 @@ const KELURAHAN_BY_KECAMATAN: Record<string, string[]> = Object.fromEntries(
   ])
 )
 const NORMALIZE_ADDR = (s: string) => s.toLowerCase().replace(/[\s\-']/g, '')
-const IDENTITAS_OPTIONS = ['KTP', 'SIM', 'Kartu Pelajar', 'Paspor']
 
-const FORM_STORAGE_KEY = 'encoretix_checkout_merch_data'
+const FORM_STORAGE_KEY = MERCH_CHECKOUT_FORM_KEY
 
 function safeGetStorage(key: string): string | null {
   if (typeof window === 'undefined') return null
@@ -122,23 +136,18 @@ function validatePemesan(p: PemesanData, t: (x: { ID: string; EN: string }) => s
   if (p.nama.trim().length < 2) {
     return msg('Nama lengkap wajib diisi.', 'Full name is required.')
   }
-  const ident = p.identitas.trim()
-  const isLengthChecked = p.jenisIdentitas === 'KTP' || p.jenisIdentitas === 'SIM'
-  if (isLengthChecked) {
-    if (!/^\d{16}$/.test(ident)) {
-      return msg(
-        `Nomor identitas ${p.jenisIdentitas} harus 16 digit angka.`,
-        `Your ${p.jenisIdentitas} number must be 16 digits.`
-      )
-    }
-  } else if (ident.length < 4) {
+  const isLengthChecked = needs16DigitIdentity(p.jenisIdentitas)
+  if (!isValidIdentitas(p.identitas, p.jenisIdentitas)) {
     return msg(
-      `Nomor identitas ${p.jenisIdentitas} tidak valid.`,
-      `Your ${p.jenisIdentitas} number is invalid.`
+      isLengthChecked
+        ? `Nomor identitas ${p.jenisIdentitas} harus 16 digit angka.`
+        : `Nomor identitas ${p.jenisIdentitas} tidak valid.`,
+      isLengthChecked
+        ? `Your ${p.jenisIdentitas} number must be 16 digits.`
+        : `Your ${p.jenisIdentitas} number is invalid.`
     )
   }
-  const usia = Number(p.usia)
-  if (!Number.isInteger(usia) || usia < 1 || usia > 120) {
+  if (!isValidUsia(p.usia)) {
     return msg(
       'Usia tidak valid. Masukkan angka antara 1-120.',
       'Invalid age. Enter a number between 1-120.'
@@ -147,9 +156,7 @@ function validatePemesan(p: PemesanData, t: (x: { ID: string; EN: string }) => s
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(p.email.trim())) {
     return msg('Format email tidak valid.', 'Invalid email format.')
   }
-  const wa = p.whatsapp.replace(/[\s-]/g, '')
-  // Terima: 81234567890, +6281234567890, 081234567890
-  if (!/^(?:(?:\+?62|0)8\d{8,11}|8\d{8,11})$/.test(wa)) {
+  if (!isValidWhatsapp(p.whatsapp)) {
     return msg(
       'Nomor WhatsApp tidak valid. Contoh: 81234567890, 081234567890, atau +6281234567890.',
       'Invalid WhatsApp number. e.g. 81234567890.'
@@ -199,12 +206,12 @@ function Input({ label, required, hint, prefixIcon, ...props }: { label: string;
           className={`w-full border border-gray-200 rounded-lg py-2.5 text-sm focus:outline-none focus:border-gray-400 ${prefixIcon ? 'pl-16 pr-3' : 'px-3'}`}
         />
       </div>
-      {hint && <p className="text-[11px] text-amber-600 mt-1 flex items-center gap-1">{hint}</p>}
+      {hint && <p className="text-[11px] text-red-500 mt-1">{hint}</p>}
     </div>
   )
 }
 
-function Select({ label, required, options, ...props }: { label?: string; required?: boolean; options: string[] } & React.SelectHTMLAttributes<HTMLSelectElement>) {
+function Select({ label, required, options, ...props }: { label?: string; required?: boolean; options: readonly string[] } & React.SelectHTMLAttributes<HTMLSelectElement>) {
   return (
     <div>
       {label && (
@@ -245,11 +252,11 @@ interface CartLine {
 interface PemesanData {
   nama: string
   identitas: string
-  jenisIdentitas: string
-  usia: string
+  jenisIdentitas: JenisIdentitas
+  usia: DigitString
   jenisKelamin: 'Laki-laki' | 'Perempuan'
   email: string
-  whatsapp: string
+  whatsapp: DigitString
   kecamatan: string
   kelurahan: string
   alamat: string
@@ -259,10 +266,10 @@ const EMPTY_PEMESAN: PemesanData = {
   nama: '',
   identitas: '',
   jenisIdentitas: 'KTP',
-  usia: '',
+  usia: EMPTY_DIGITS,
   jenisKelamin: 'Laki-laki',
   email: '',
-  whatsapp: '',
+  whatsapp: EMPTY_DIGITS,
   kecamatan: '',
   kelurahan: '',
   alamat: '',
@@ -302,10 +309,12 @@ function MerchCheckoutContent() {
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
+  const [showTerms, setShowTerms] = useState(false)
 
   const { remaining, isExpired } = usePaymentCountdown(false, false)
 
   const [isRestored, setIsRestored] = useState(false)
+  const submittedRef = useRef(false)
 
   const handleBack = () => {
     clearPaymentCountdown()
@@ -337,6 +346,14 @@ function MerchCheckoutContent() {
     if (!isRestored) return
     safeSetStorage(FORM_STORAGE_KEY, JSON.stringify({ pemesan, lines }))
   }, [isRestored, pemesan, lines])
+
+  useEffect(() => {
+    const onPop = () => {
+      if (!submittedRef.current) safeRemoveStorage(FORM_STORAGE_KEY)
+    }
+    window.addEventListener('popstate', onPop)
+    return () => window.removeEventListener('popstate', onPop)
+  }, [])
 
   useEffect(() => {
     fetch('/api/merchandise')
@@ -392,7 +409,7 @@ function MerchCheckoutContent() {
   const adminFee = Math.round(subtotal * ADMIN_FEE_RATE)
   const total = subtotal + adminFee
 
-  const isLengthChecked = pemesan.jenisIdentitas === 'KTP' || pemesan.jenisIdentitas === 'SIM'
+  const isLengthChecked = needs16DigitIdentity(pemesan.jenisIdentitas)
   const identitasHint =
     isLengthChecked && pemesan.identitas.length > 0 && pemesan.identitas.trim().length !== 16
       ? `Nomor identitas ${pemesan.jenisIdentitas} harus 16 digit`
@@ -469,6 +486,7 @@ function MerchCheckoutContent() {
       // Catatan: FORM_STORAGE_KEY sengaja TIDAK dihapus di sini agar jika pemesan
       // menekan tombol 'Kembali' dari halaman pembayaran, isian form tidak hilang.
       clearStoredCart()
+      submittedRef.current = true
       router.push(`/payment/merch?booking=${encodeURIComponent(result.data.kode_pesanan)}`)
     } catch (err) {
       setError(friendlyError(err))
@@ -606,15 +624,21 @@ function MerchCheckoutContent() {
                     <label className="block text-xs font-medium text-gray-600 mb-1.5">{t({ ID: 'Identitas', EN: 'Identity' })} <span className="text-red-500">*</span></label>
                     <div className="flex flex-col sm:flex-row gap-3">
                       <div className="w-full sm:w-1/3">
-                        <Select options={IDENTITAS_OPTIONS} value={pemesan.jenisIdentitas} onChange={(e) => setPemesan({ ...pemesan, jenisIdentitas: e.target.value })} />
+                        <Select options={IDENTITAS_OPTIONS} value={pemesan.jenisIdentitas} onChange={(e) => {
+                          const jenisIdentitas = e.target.value as JenisIdentitas
+                          setPemesan({ ...pemesan, jenisIdentitas, identitas: sanitizeIdentitas(pemesan.identitas, jenisIdentitas) })
+                        }} />
                       </div>
                       <div className="w-full sm:w-2/3">
                         <input
                           required
                           placeholder={t({ ID: 'Nomor Identitas', EN: 'Identity Number' })}
+                          inputMode={isLengthChecked ? 'numeric' : 'text'}
+                          pattern={isLengthChecked ? '[0-9]*' : '[A-Za-z0-9]*'}
+                          maxLength={isLengthChecked ? 16 : 20}
                           className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-gray-400"
                           value={pemesan.identitas}
-                          onChange={(e) => setPemesan({ ...pemesan, identitas: e.target.value })}
+                          onChange={(e) => setPemesan({ ...pemesan, identitas: sanitizeIdentitas(e.target.value, pemesan.jenisIdentitas) })}
                         />
                       </div>
                     </div>
@@ -641,12 +665,12 @@ function MerchCheckoutContent() {
                     </div>
                   </div>
 
-                  <Input label={t({ ID: 'Usia', EN: 'Age' })} type="number" required value={pemesan.usia} onChange={(e) => setPemesan({ ...pemesan, usia: e.target.value })} />
+                  <Input label={t({ ID: 'Usia', EN: 'Age' })} type="text" inputMode="numeric" pattern="[0-9]*" maxLength={3} required value={pemesan.usia} onChange={(e) => setPemesan({ ...pemesan, usia: sanitizeUsia(e.target.value) })} />
                   <Input
                     label={t({ ID: 'Email', EN: 'Email' })}
                     type="email"
                     required
-                    hint={<><span>ℹ️</span> {t({ ID: 'Bukti pembelian akan dikirimkan ke email ini', EN: 'Purchase proof will be sent to this email' })}</>}
+                    hint={t({ ID: 'Bukti pembelian akan dikirimkan ke email ini', EN: 'Purchase proof will be sent to this email' })}
                     value={pemesan.email}
                     onChange={(e) => setPemesan({ ...pemesan, email: e.target.value })}
                   />
@@ -654,9 +678,12 @@ function MerchCheckoutContent() {
   label={t({ ID: 'Nomor WhatsApp', EN: 'WhatsApp Number' })}
   required
   type="tel"
+  inputMode="tel"
+  pattern="[0-9]*"
+  maxLength={13}
   prefixIcon={<span className="text-gray-500 text-xs font-medium flex items-center gap-1"><span className="text-red-500">🇮🇩</span> +62</span>}
   value={pemesan.whatsapp}
-  onChange={(e) => setPemesan({ ...pemesan, whatsapp: e.target.value })}
+  onChange={(e) => setPemesan({ ...pemesan, whatsapp: sanitizeWhatsapp(e.target.value) })}
 />
                 </div>
               </div>
@@ -747,7 +774,7 @@ function MerchCheckoutContent() {
               </button>
 
               <p className="text-[11px] text-gray-400 mt-2 text-center">
-                {t({ ID: 'Dengan melanjutkan, kamu menyetujui', EN: 'By continuing, you agree to' })} <span className="underline">{t({ ID: 'Syarat & Ketentuan', EN: 'Terms & Conditions' })}</span>.
+                {t({ ID: 'Dengan melanjutkan, kamu menyetujui', EN: 'By continuing, you agree to' })} <button type="button" onClick={() => setShowTerms(true)} className="underline">{t({ ID: 'Syarat & Ketentuan', EN: 'Terms & Conditions' })}</button>.
               </p>
             </div>
           </div>
@@ -777,6 +804,7 @@ function MerchCheckoutContent() {
         actionLabel={t({ ID: 'Ulangi Pesanan', EN: 'Repeat Order' })}
         onAction={() => router.push('/merchandise')}
       />
+      <TermsModal open={showTerms} onClose={() => setShowTerms(false)} />
     </>
   )
 }

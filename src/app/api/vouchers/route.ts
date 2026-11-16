@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +20,8 @@ interface VoucherRow {
 // Voucher tanpa id_event (NULL) tidak dimunculkan pada filter event tertentu.
 export async function GET(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const event = new URL(request.url).searchParams.get('event')
     const supabase = getServerSupabase()
 
@@ -58,6 +61,8 @@ export async function GET(request: Request) {
 // Body: { kode_voucher: string, nominal_diskon: number, kuota_penggunaan: number, id_event: string }
 export async function POST(request: Request) {
   try {
+    const auth = requireRole(request, ['admin', 'superadmin'])
+    if ('response' in auth) return auth.response
     const body = await request.json()
     const kode = String(body.kode_voucher || '').trim().toUpperCase()
     if (!kode) {
@@ -114,7 +119,7 @@ export async function POST(request: Request) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
     if (/id_event.*column/i.test(message)) {
       return NextResponse.json(
-        { error: 'Kolom id_event belum ada. Jalankan migration supabase/migrations/add_voucher_event.sql di Supabase SQL Editor.' },
+        { error: 'Kolom id_event belum ada. Jalankan migration db/migrations/add_voucher_event.sql di database MySQL.' },
         { status: 500 }
       )
     }

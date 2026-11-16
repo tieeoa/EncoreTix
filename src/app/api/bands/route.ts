@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
 import { resolveEventId } from '../../lib/events'
+import { requireRole } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -30,6 +31,8 @@ export async function GET(request: Request) {
 // Body: { ..., event?: string } / event kosong = event aktif.
 export async function POST(request: Request) {
   try {
+    const auth = requireRole(request, ['superadmin'])
+    if ('response' in auth) return auth.response
     const body = await request.json()
     if (!body.nama_band) {
       return NextResponse.json({ error: 'Nama band wajib diisi' }, { status: 400 })
