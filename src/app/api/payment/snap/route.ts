@@ -87,6 +87,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const bookingId = (body.booking_id as string || body.order_id as string || '').trim().toUpperCase()
     const paymentMethod = typeof body.payment_method === 'string' ? body.payment_method.trim().toLowerCase() : ''
+    const adminMode = body.admin_mode === true
 
     if (!bookingId) {
       return NextResponse.json({ error: 'booking_id wajib diisi' }, { status: 400 })
@@ -227,13 +228,18 @@ export async function POST(request: Request) {
     // Fungsi membuat transaksi dengan fallback retry jika order_id sudah pernah dibuat di Midtrans
     const createTransactionWithRetry = async (id: string, attempt: number = 0): Promise<{ token: string; redirect_url: string }> => {
       const targetOrderId = attempt === 0 ? id : `${id}-${attempt}`
+      const callbackUrl = process.env.NEXT_PUBLIC_APP_URL
+        ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/api/payment/webhook`
+        : `${new URL(request.url).origin}/api/payment/webhook`
       const parameter: Record<string, unknown> = {
         transaction_details: {
           order_id: targetOrderId,
           gross_amount: grossAmount,
         },
         customer_details: customerDetails,
+        callback_url: callbackUrl,
       }
+      if (adminMode) parameter.expiry = { unit: 'minute', duration: 3 }
 
       // Jika user memilih metode pembayaran spesifik di UI EncoreTix,
       // teruskan ke Midtrans agar Snap LANGSUNG membuka metode tersebut (bypass menu pemilihan Midtrans).

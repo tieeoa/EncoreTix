@@ -3,7 +3,7 @@ import { getServerSupabase } from '../../../lib/supabaseClient'
 import { expireExpiredPendingOrders } from '../../../lib/expireOrders'
 import { getReportStats } from '../../../lib/reportStats'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,10 +15,17 @@ export async function GET(request: Request) {
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const supabase = getServerSupabase()
     const { searchParams } = new URL(request.url)
     const eventParam = searchParams.get('event')
     const offlineOnly = searchParams.get('source') === 'offline'
+    let panitiaId = searchParams.get('panitia')
+    // Data order/transaksi manual per akun: paksa ke akun sendiri untuk admin (tampilan verifikasi tetap keseluruhan).
+    if (offlineOnly && auth.session.role === 'admin') {
+      panitiaId = auth.session.id
+    }
 
     // Sinkronisasi pesanan tiket online yang masih pending dengan Midtrans terlebih dahulu
     const { data: pendingTiket } = await supabase
@@ -45,7 +52,7 @@ export async function GET(request: Request) {
     // Tandai pesanan pending yang sudah lewat 10 menit sebagai gagal.
     await expireExpiredPendingOrders(supabase)
 
-    const data = await getReportStats(supabase, eventParam, offlineOnly)
+    const data = await getReportStats(supabase, eventParam, offlineOnly, panitiaId)
     return NextResponse.json({ data })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'

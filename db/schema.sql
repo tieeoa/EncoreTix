@@ -1,4 +1,4 @@
--- ============================================================
+﻿-- ============================================================
 -- Skema database Supabase untuk EncoreTix
 -- Berdasarkan ERD MySQL, dikonversi untuk PostgreSQL/Supabase
 -- Cara pakai: buka dashboard supabase -> SQL Editor -> tempel & jalankan semua.
@@ -205,6 +205,11 @@ alter table public.panitia
   add column if not exists role text not null default 'admin'
   check (role in ('admin', 'superadmin'));
 
+-- Status akun panitia (aktif/nonaktif)
+alter table public.panitia
+  add column if not exists status text not null default 'aktif'
+  check (status in ('aktif', 'nonaktif'));
+
 -- Tabel event. MULTI-ROW: satu baris per edisi event (CoravFest Vol.1, Vol.2, dst).
 -- Event dengan status 'active' = event yang sedang dijual & ditampilkan di halaman utama.
 -- Event dengan status 'closed' (atau tanggal sudah lewat) = "Event Sebelumnya" di home.
@@ -406,3 +411,4 @@ alter table public.merchandise
 -- Stok offline (kuota_offline) dihapus; fokus penjualan lewat web.
 alter table public.merchandise
   drop column if exists kuota_offline;
+

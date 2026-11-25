@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 import { isTicketSalesClosed } from '../../lib/salesClosed'
 import { resolveEventId } from '../../lib/events'
 
@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     const supabase = getServerSupabase()
     const { searchParams } = new URL(request.url)
     const eventId = await resolveEventId(supabase, searchParams.get('event'))
+    if (!eventId) return NextResponse.json({ data: [], sales_closed: true })
 
     let query = supabase.from('tiket').select('*')
     if (eventId) {
@@ -37,6 +38,8 @@ export async function POST(request: Request) {
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const body = await request.json()
     if (!body.kategori || !body.harga) {
       return NextResponse.json({ error: 'Kategori dan harga wajib diisi' }, { status: 400 })

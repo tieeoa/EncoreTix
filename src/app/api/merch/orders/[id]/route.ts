@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay, getActiveEvent } from '../../../../lib/events'
 import { sendMerchEmailForOrder } from '../../../../lib/merchSender'
 import { resolveMerchGroup, buildMerchGroupData } from '../../../../lib/merchGroup'
-import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../../lib/rateLimit'
+import { checkRateLimit, getClientIp, rateLimitResponse, recordFailedCodeLookup, clearFailedCodeLookups, codeLockResponse } from '../../../../lib/rateLimit'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation, getSessionFromRequest } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -16,8 +16,12 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const clientIp = getClientIp(request)
+  const isAdmin = Boolean(getSessionFromRequest(request))
+  const codeKey = `code-lookup:${clientIp}`
+
   // Rate limit: maks 30 lookup per menit per IP
-  const rl = checkRateLimit(`merch-lookup:${getClientIp(request)}`, { max: 30, windowMs: 60_000 })
+  const rl = checkRateLimit(`merch-lookup:${clientIp}`, { max: 30, windowMs: 60_000 })
   if (!rl.allowed) return rateLimitResponse(rl.resetAt)
 
   try {
@@ -26,8 +30,14 @@ export async function GET(
 
     const resolved = await resolveMerchGroup(supabase, id)
     if (!resolved) {
+      if (!isAdmin) {
+        const lock = recordFailedCodeLookup(codeKey)
+        if (lock.locked) return codeLockResponse(lock.resetAt)
+      }
       return NextResponse.json({ error: 'Pesanan merch tidak ditemukan' }, { status: 404 })
     }
+
+    if (!isAdmin) clearFailedCodeLookups(codeKey)
 
     // Auto-sync status pesanan merchandise jika masih pending
     if (resolved.rows[0]?.status_bayar === 'pending') {
@@ -64,6 +74,8 @@ export async function PATCH(
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const body = await request.json()
     if (!['belum_diambil', 'sudah_diambil'].includes(body.status_pengambilan)) {
@@ -96,8 +108,14 @@ export async function PATCH(
       // Verifikasi per-event: hanya pesanan milik event yang sedang berjalan
       // yang boleh diambil (mencegah kode event lain dipakai di booth ini).
       const activeEvent = await getActiveEvent(supabase)
+      if (!activeEvent) {
+        return NextResponse.json(
+          { error: 'Belum ada event aktif. Pengambilan merchandise tidak dapat dilakukan.', code: 'NO_ACTIVE_EVENT' },
+          { status: 409 }
+        )
+      }
       const orderEventId = resolved.rows[0]?.merchandise?.id_event ?? null
-      if (activeEvent && orderEventId && String(orderEventId) !== String(activeEvent.id)) {
+      if (activeEvent && String(orderEventId) !== String(activeEvent.id)) {
         return NextResponse.json(
           { error: `Pesanan ini bukan untuk${activeEvent.nama_event ? ` "${activeEvent.nama_event}"` : ' event yang sedang berjalan'}. Pengambilan ditolak.`, code: 'WRONG_EVENT' },
           { status: 403 }
@@ -111,8 +129,11 @@ export async function PATCH(
     if (body.status_pengambilan === 'sudah_diambil') {
       patch.bukti_pengambilan = typeof body.bukti_pengambilan === 'string' ? body.bukti_pengambilan : null
       patch.bukti_pengambilan_at = new Date().toISOString()
+      patch.id_panitia = auth.session.id
     } else {
       patch.bukti_pengambilan_at = null
+      patch.bukti_pengambilan = null
+      patch.id_panitia = null
     }
 
     const { data, error } = await supabase
@@ -137,6 +158,8 @@ export async function POST(
   try {
     const auth = requireRole(_request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(_request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const supabase = getServerSupabase()
 

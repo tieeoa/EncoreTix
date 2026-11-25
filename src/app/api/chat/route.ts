@@ -368,6 +368,7 @@ ${merchCtx}
 - Untuk kendala BESAR atau yang tidak bisa diselesaikan lewat chat, JANGAN menebak solusi teknis. Arahkan pengguna menghubungi Customer Service EncoreTix via WhatsApp: +62 877-6374-3577 (link: https://wa.me/6287763743577), atau lewat menu Kontak (/kontak). Contoh kasus: e-tiket tidak masuk email/Gmail (termasuk setelah cek folder Spam/Junk) atau minta dikirim ulang ke email lain; pembayaran sudah terpotong tapi status belum berubah / dobel bayar; pesanan atau data salah (nama/email/HP); refund atau pembatalan; masalah voucher (tidak bisa dipakai / kuota); kendala pengambilan merch (stok, tukar ukuran, kode tidak terbaca); kendala akun/verifikasi identitas; serta permintaan hapus/perubahan data pribadi.
 - Sertakan juga bahwa e-tiket tetap bisa diakses/diunduh di menu "Tiket Saya" (/tiket-saya) sebagai cadangan bila email belum diterima.
 - Untuk kendala ringan (cara beli, metode bayar, cek status, sisa kuota, batas pengambilan), jawab langsung sesuai panduan di atas tanpa perlu mengarahkan ke CS.
+- Untuk pertanyaan status tiket/pesanan, wajib memakai [DATA SISTEM KODE TRANSAKSI] bila ada kode booking. Tanpa kode booking, jangan mengarang jawaban: minta kode booking (contoh: ETX-XXXXXX) atau arahkan ke menu Tiket Saya (/tiket-saya). Jangan menjawab pertanyaan tiket dengan instruksi login akun.
 8. Privasi & Data Sensitif (WAJIB):
 - JANGAN pernah membagikan data pribadi siapa pun: NIK/no identitas, no HP, umur, jenis kelamin, alamat, maupun email lengkap. Bila perlu menyebut email, gunakan versi tersamarkan (contoh: a***@gmail.com).
 - Saat menjelaskan status pesanan, cukup sebut status (mis. LUNAS/PENDING), jumlah, dan link halaman terkait. Jangan membacakan ulang data pribadi pemesan.
@@ -433,8 +434,8 @@ ATURAN MENJAWAB:
             cachedModelName = model
             return NextResponse.json({ reply: text })
           }
+          lastError = `Model ${model} mengembalikan respons kosong.`
         }
-        lastError = result.data.error?.message || `Model ${model} gagal`
       } catch (e) {
         lastError = e instanceof Error ? e.message : 'Koneksi gagal'
       }

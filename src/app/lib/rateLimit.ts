@@ -87,3 +87,46 @@ export function rateLimitResponse(resetAt: number): NextResponse {
     }
   )
 }
+
+const failedCodeLookups = new Map<string, { count: number; resetAt: number }>()
+const CODE_FAILURE_LIMIT = 5
+const CODE_FAILURE_WINDOW_MS = 15 * 60 * 1000
+
+function getFailedCodeEntry(key: string) {
+  const now = Date.now()
+  let entry = failedCodeLookups.get(key)
+  if (!entry || now >= entry.resetAt) {
+    entry = { count: 0, resetAt: now + CODE_FAILURE_WINDOW_MS }
+    failedCodeLookups.set(key, entry)
+  }
+  return entry
+}
+
+export function isCodeLookupLocked(key: string): { locked: boolean; resetAt: number } {
+  const entry = getFailedCodeEntry(key)
+  return { locked: entry.count >= CODE_FAILURE_LIMIT, resetAt: entry.resetAt }
+}
+
+export function recordFailedCodeLookup(key: string): { locked: boolean; resetAt: number } {
+  const entry = getFailedCodeEntry(key)
+  if (entry.count < CODE_FAILURE_LIMIT) entry.count++
+  return isCodeLookupLocked(key)
+}
+
+export function clearFailedCodeLookups(key: string): void {
+  failedCodeLookups.delete(key)
+}
+
+export function codeLockResponse(resetAt: number): NextResponse {
+  const retryAfterSec = Math.ceil((resetAt - Date.now()) / 1000)
+  return NextResponse.json(
+    { error: 'Terlalu banyak kode salah. Coba lagi beberapa saat lagi.', code_locked: true },
+    {
+      status: 429,
+      headers: {
+        'Retry-After': String(retryAfterSec),
+        'X-RateLimit-Reset': String(Math.floor(resetAt / 1000)),
+      },
+    }
+  )
+}

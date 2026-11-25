@@ -33,6 +33,7 @@ export async function POST(request: Request) {
     const body = await request.json()
     const bookingId = (body.booking_id as string || body.order_id as string || '').trim().toUpperCase()
     const paymentMethod = typeof body.payment_method === 'string' ? body.payment_method.trim().toLowerCase() : 'qris'
+    const adminMode = body.admin_mode === true
 
     if (!bookingId) {
       return NextResponse.json({ error: 'booking_id wajib diisi' }, { status: 400 })
@@ -165,6 +166,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Total pembayaran tidak valid' }, { status: 400 })
     }
 
+    const callbackUrl = process.env.NEXT_PUBLIC_APP_URL
+      ? `${process.env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '')}/api/payment/webhook`
+      : `${new URL(request.url).origin}/api/payment/webhook`
+
     // Bangun payload Core API charge sesuai pilihan metode
     const buildChargePayload = (orderId: string): Record<string, unknown> => {
       const payload: Record<string, unknown> = {
@@ -187,6 +192,7 @@ export async function POST(request: Request) {
         payload.qris = { acquirer: 'gopay' }
       } else if (paymentMethod === 'shopeepay') {
         payload.payment_type = 'shopeepay'
+        payload.shopeepay = { callback_url: callbackUrl }
       } else if (paymentMethod === 'bca_va' || paymentMethod === 'bca') {
         payload.payment_type = 'bank_transfer'
         payload.bank_transfer = { bank: 'bca' }
@@ -234,6 +240,7 @@ export async function POST(request: Request) {
       const payload = buildChargePayload(targetOrderId)
 
       try {
+        if (adminMode) payload.custom_expiry = { expiry_duration: 3, unit: 'minute' }
         const response = await core.charge(payload)
         return response as Record<string, unknown>
       } catch (err: unknown) {
@@ -242,7 +249,9 @@ export async function POST(request: Request) {
         if (
           (errMsg.includes('already been taken') ||
             errMsg.includes('has already been generated') ||
-            errMsg.includes('transaction has been created')) &&
+            errMsg.includes('transaction has been created') ||
+            errMsg.includes('HTTP status code: 406') ||
+            errMsg.includes('conflict with the current state')) &&
           attempt < 5
         ) {
           return chargeWithRetry(id, attempt + 1)
@@ -257,6 +266,7 @@ export async function POST(request: Request) {
     const actions = (chargeRes.actions as { name: string; method: string; url: string }[]) || []
     const qrUrlAction = actions.find((a) => a.name === 'generate-qr-code')
     const qrUrl = qrUrlAction?.url || null
+    const deeplinkUrl = actions.find((a) => a.name === 'deeplink-redirect')?.url || null
     const qrString = (chargeRes.qr_string as string) || null
 
     const vaNumbers = (chargeRes.va_numbers as { bank: string; va_number: string }[]) || []
@@ -278,6 +288,7 @@ export async function POST(request: Request) {
       expiry_time: chargeRes.expiry_time || null,
       qr_url: qrUrl,
       qr_string: qrString,
+      deeplink_url: deeplinkUrl,
       va_number: vaNumber || permataVa,
       bank: vaBank || (permataVa ? 'permata' : null),
       bill_key: billKey,

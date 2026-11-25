@@ -18,6 +18,14 @@ export interface ManualSummary {
   sharePct: number
 }
 
+export interface ManualAdminSummary {
+  id: string
+  nama: string
+  orders: number
+  tiket: number
+  revenue: number
+}
+
 export interface TrendPoint {
   key: string
   label: string
@@ -51,6 +59,7 @@ export interface ReportStats {
   totalTransaksi: number
   paymentBreakdown: PaymentMethodSummary[]
   manualSummary: ManualSummary
+  manualByAdmin: ManualAdminSummary[]
   revenueTrend: RevenueTrend
   tiketBreakdown: { id: string; kategori: string; periode: string | null; terjual: number; total: number; sisa: number; harga: number; persen: number; revenue: number }[]
   merchBreakdown: { id: string; nama: string; harga: number; stok: number; terjual: number; revenue: number }[]
@@ -61,17 +70,18 @@ export interface ReportStats {
 export async function getReportStats(
   supabase: SupabaseClient,
   eventParam: string | null,
-  offlineOnly = false
+  offlineOnly = false,
+  panitiaId: string | null = null
 ): Promise<ReportStats> {
   const eventId = await resolveEventId(supabase, eventParam)
 
   let tiketQuery = supabase.from('tiket').select('id, harga, kuota, sisa_kuota, kategori, periode_penjualan')
   let merchQuery = supabase.from('merchandise').select('id, harga, stok_s, stok_m, stok_l, stok_xl, stok_xxl, nama_merch')
-  let pesananQuery = supabase.from('pesanan_tiket').select('id, id_tiket, jumlah, status_bayar, status_check_in, tiket_check_in, source, tanggal_pesan, tiket(id_event)')
+  let pesananQuery = supabase.from('pesanan_tiket').select('id, id_tiket, jumlah, status_bayar, status_check_in, tiket_check_in, source, tanggal_pesan, id_panitia, checked_in_by, tiket(id_event)')
 
-  // Kolom pesanan_merchandise.metode_pembayaran belum tentu ada di DB
-  // (migrasi add_metode_pembayaran_merch.sql belum dijalankan) -> fallback tanpa kolom.
-  const MERCH_COLS_WITH = 'id, id_merch, jumlah, status_bayar, status_pengambilan, total_harga, tanggal_pesan, metode_pembayaran, merchandise(id_event)'
+  // Kolom pesanan_merchandise.metode_pembayaran/id_panitia bisa belum ada di DB
+  // (migrasi belum dijalankan) -> fallback tanpa kolom tersebut.
+  const MERCH_COLS_WITH = 'id, id_merch, jumlah, status_bayar, status_pengambilan, total_harga, tanggal_pesan, metode_pembayaran, id_panitia, merchandise(id_event)'
   const MERCH_COLS_WITHOUT = 'id, id_merch, jumlah, status_bayar, status_pengambilan, total_harga, tanggal_pesan, merchandise(id_event)'
   let merchTiketIds: string[] | null = null
 
@@ -142,23 +152,29 @@ any[] | null; error: { message: string } | null }
 
   const tikets = tiketRes.data
   const merches = merchRes.data
-  const pesanans = offlineOnly
+  let pesanans = offlineOnly
     ? (pesananRes.data || []).filter((p) => p.source === 'offline')
-    : pesananRes.data
-  const merchOrders = checkoutMerchRes.data || []
+    : (pesananRes.data || [])
+  const merchOrdersAll = checkoutMerchRes.data || []
+  const merchOrders = merchOrdersAll
+  if (panitiaId) {
+    // Hanya transaksi/order manual yang dibedakan per akun panitia.
+    // Verifikasi/check-in/pengambilan merch tidak per akun.
+    pesanans = pesanans.filter((p) => p.source === 'offline' && (p as { id_panitia?: string | null }).id_panitia === panitiaId)
+  }
 
   const totalKuota = tikets.reduce((s, t) => s + t.kuota, 0)
-  const totalSisa = tikets.reduce((s, t) => s + t.sisa_kuota, 0)
-  const tiketTerjual = offlineOnly
-    ? pesanans.filter((p) => p.status_bayar === 'berhasil').reduce((s, p) => s + p.jumlah, 0)
-    : totalKuota - totalSisa
-
-  const tiketLunas = pesanans
+  // Terjual dihitung dari pesanan yang benar-benar lunas, bukan selisih
+  // kuota - sisa_kuota. sisa_kuota bisa berubah lewat edit tiket, sehingga
+  // selisihnya tidak lagi mencerminkan penjualan.
+  const tiketTerjual = pesanans
     .filter((p) => p.status_bayar === 'berhasil')
     .reduce((s, p) => s + p.jumlah, 0)
+
+  const tiketLunas = tiketTerjual
   // Hitung per TIKET (bukan per booking): jumlah nomor tiket di tiket_check_in.
   // Fallback ke jumlah penuh untuk data lama yang statusnya sudah_check_in
-  // tapi array-nya masih kosong.
+  // tapi array-nya masih kosong. (Check-in/verifikasi tidak dibedakan per akun.)
   const checkin = pesanans.reduce((s, p) => {
     const arr = Array.isArray((p as { tiket_check_in?: unknown }).tiket_check_in)
       ? ((p as { tiket_check_in?: unknown }).tiket_check_in as number[])
@@ -169,11 +185,12 @@ any[] | null; error: { message: string } | null }
   }, 0)
   const manualOrders = pesanans.filter((p) => p.source === 'offline').length
 
-  const merchBelum = merchOrders.filter((m) => m.status_pengambilan === 'belum_diambil').length
-  const merchDiambil = merchOrders.filter((m) => m.status_pengambilan === 'sudah_diambil').length
-  const merchTerjual = merchOrders
-    .filter((m) => m.status_bayar === 'berhasil')
-    .reduce((s, m) => s + m.jumlah, 0)
+  // Status pengambilan hanya untuk pesanan merch yang benar-benar lunas.
+  // Pesanan gagal/pending tidak akan pernah diambil, jangan dihitung.
+  const merchBerhasil = merchOrders.filter((m) => m.status_bayar === 'berhasil')
+  const merchBelum = merchBerhasil.filter((m) => m.status_pengambilan === 'belum_diambil').length
+  const merchDiambil = merchBerhasil.filter((m) => m.status_pengambilan === 'sudah_diambil').length
+  const merchTerjual = merchBerhasil.reduce((s, m) => s + m.jumlah, 0)
 
   const revenueTiket = pesanans
     .filter((p) => p.status_bayar === 'berhasil')
@@ -187,9 +204,18 @@ any[] | null; error: { message: string } | null }
     .filter((m) => m.status_bayar === 'berhasil')
     .reduce((s, m) => s + Number(m.total_harga), 0)
 
-  const transaksiBerhasil = pesanans.filter((p) => p.status_bayar === 'berhasil').length
-  const transaksiPending = pesanans.filter((p) => p.status_bayar === 'pending').length
-  const transaksiGagal = pesanans.filter((p) => p.status_bayar === 'gagal').length
+  // Total transaksi = baris pesanan tiket + baris pesanan merchandise.
+  // Ketiga status di bawah harus memakai dasar yang sama agar jumlahnya
+  // selalu sama dengan totalTransaksi.
+  const transaksiBerhasil =
+    pesanans.filter((p) => p.status_bayar === 'berhasil').length +
+    merchOrders.filter((m) => m.status_bayar === 'berhasil').length
+  const transaksiPending =
+    pesanans.filter((p) => p.status_bayar === 'pending').length +
+    merchOrders.filter((m) => m.status_bayar === 'pending').length
+  const transaksiGagal =
+    pesanans.filter((p) => p.status_bayar === 'gagal').length +
+    merchOrders.filter((m) => m.status_bayar === 'gagal').length
   const totalTransaksi = pesanans.length + merchOrders.length
 
   const canonicalMetode = (raw: unknown, fallback: string) => {
@@ -208,10 +234,13 @@ any[] | null; error: { message: string } | null }
   // --- Ringkasan per metode pembayaran (hanya transaksi berhasil) ---
   const payAgg = new Map<string, { transaksi: number; revenue: number }>()
   const addPay = (metode: string, revenue: number) => {
-    const hit = payAgg.get(metode) || { transaksi: 0, revenue: 0 }
+    // Grup per label metode, bukan nilai mentah. 'qris' dan 'QRIS' harus
+    // tercatat sebagai satu metode yang sama.
+    const key = metodeLabel(metode)
+    const hit = payAgg.get(key) || { transaksi: 0, revenue: 0 }
     hit.transaksi += 1
     hit.revenue += revenue
-    payAgg.set(metode, hit)
+    payAgg.set(key, hit)
   }
   const tiketHargaById = new Map(tikets.map((t) => [t.id, Number(t.harga)]))
   for (const p of pesanans) {
@@ -254,6 +283,48 @@ any[] | null; error: { message: string } | null }
     onlineRevenue,
     sharePct: revenueTiket + revenueMerch > 0 ? Math.round((manualRevenue / (revenueTiket + revenueMerch)) * 100) : 0,
   }
+
+  // --- Order manual per akun panitia (untuk laporan PDF) ---
+  const offlinePesanans = pesanans.filter((p) => p.source === 'offline')
+  const adminIds = [
+    ...new Set(
+      offlinePesanans
+        .map((p) => (p as { id_panitia?: string | null }).id_panitia)
+        .filter((v): v is string => !!v)
+    ),
+  ]
+  let adminNameById = new Map<string, string>()
+  if (adminIds.length > 0) {
+    const { data: adminRows, error: adminErr } = await supabase
+      .from('panitia')
+      .select('id, nama')
+      .in('id', adminIds)
+    if (adminErr) throw new Error(adminErr.message)
+    adminNameById = new Map(
+      (adminRows || []).map((a) => [String(a.id), String((a as { nama?: unknown }).nama || '')])
+    )
+  }
+  const byAdmin = new Map<string, { orders: number; tiket: number; revenue: number }>()
+  for (const p of offlinePesanans) {
+    const adminId = (p as { id_panitia?: string | null }).id_panitia || 'unknown'
+    const hit = byAdmin.get(adminId) || { orders: 0, tiket: 0, revenue: 0 }
+    hit.orders += 1
+    if (p.status_bayar === 'berhasil') {
+      hit.tiket += p.jumlah
+      const pay = pembayaranByPesanan.get(p.id)
+      hit.revenue += pay ? pay.total : (tiketHargaById.get(p.id_tiket) ?? 0) * p.jumlah
+    }
+    byAdmin.set(adminId, hit)
+  }
+  const manualByAdmin: ManualAdminSummary[] = [...byAdmin.entries()]
+    .map(([id, v]) => ({
+      id,
+      nama: adminNameById.get(id) || (id === 'unknown' ? 'Tanpa Admin' : id),
+      orders: v.orders,
+      tiket: v.tiket,
+      revenue: v.revenue,
+    }))
+    .sort((a, b) => b.revenue - a.revenue || a.nama.localeCompare(b.nama))
 
   // --- Tren pendapatan: harian (14 hari), mingguan (12 minggu), bulanan (12 bulan) ---
   const startOfDay = (d: Date) => {
@@ -368,13 +439,12 @@ any[] | null; error: { message: string } | null }
     totalTransaksi,
     paymentBreakdown,
     manualSummary,
+    manualByAdmin,
     revenueTrend,
     tiketBreakdown: tikets.map((t) => {
-      const terjual = offlineOnly
-        ? pesanans
-            .filter((p) => p.id_tiket === t.id && p.status_bayar === 'berhasil')
-            .reduce((s, p) => s + p.jumlah, 0)
-        : t.kuota - t.sisa_kuota
+      const terjual = pesanans
+        .filter((p) => p.id_tiket === t.id && p.status_bayar === 'berhasil')
+        .reduce((s, p) => s + p.jumlah, 0)
       // Pendapatan per kategori memakai nominal dibayar (bila ada), bukan harga
       // tiket saat ini yang bisa berubah setelah penjualan.
       const revenue = pesanans
@@ -389,7 +459,7 @@ any[] | null; error: { message: string } | null }
         periode: (t as { periode_penjualan?: string | null }).periode_penjualan || null,
         terjual,
         total: t.kuota,
-        sisa: t.sisa_kuota,
+        sisa: Math.max(0, t.kuota - terjual),
         harga: Number(t.harga),
         persen: t.kuota > 0 ? Math.round((terjual / t.kuota) * 100) : 0,
         revenue,

@@ -71,13 +71,13 @@ function Countdown({ target }: { target: Date | null }) {
   )
 }
 
-const TABS = ['Deskripsi', 'Syarat & Ketentuan', 'Line Up'] as const
+const TABS = ['Deskripsi', 'Line Up', 'Syarat & Ketentuan'] as const
 type Tab = (typeof TABS)[number]
 
 const TABS_ID: Record<Tab, { ID: string; EN: string }> = {
   Deskripsi: { ID: 'Deskripsi', EN: 'Description' },
-  'Syarat & Ketentuan': { ID: 'Syarat & Ketentuan', EN: 'Terms & Conditions' },
   'Line Up': { ID: 'Line Up', EN: 'Line Up' },
+  'Syarat & Ketentuan': { ID: 'Syarat & Ketentuan', EN: 'Terms & Conditions' },
 }
 
 interface LineUpBand {
@@ -116,6 +116,7 @@ export default function Home() {
   const [selectedBand, setSelectedBand] = useState<LineUpBand | null>(null)
   const [minTicketPrice, setMinTicketPrice] = useState<number | null>(null)
   const [event, setEvent] = useState<EventData | null>(null)
+  const [salesClosed, setSalesClosed] = useState(false)
   const [finished, setFinished] = useState<EventData[]>([])
 
   useEffect(() => {
@@ -150,6 +151,7 @@ export default function Home() {
       .then((r) => r.json())
       .then((res) => {
         const rows = res.data && !res.error ? (res.data as { harga: number; status?: string | null }[]) : []
+        setSalesClosed(!!res.sales_closed)
         const aktif = rows.filter((tk) => (tk.status ?? 'aktif') === 'aktif')
         if (aktif.length > 0) {
           setMinTicketPrice(Math.min(...aktif.map((tk) => Number(tk.harga))))
@@ -191,14 +193,13 @@ export default function Home() {
   }
 
   const noEventText = t({ ID: 'Belum ada event yang berlangsung', EN: 'No ongoing event' })
-  const heroTitle = event?.nama_event || t({ ID: 'CoravFest', EN: 'CoravFest' })
+  const heroTitle = event?.nama_event || t({ ID: 'Event Segera Diumumkan', EN: 'Upcoming Event Announcement' })
   const heroSubtitle = event
     ? [event.tanggal ? formatTanggal(event.tanggal) : '', eventLokasi(event), eventJam(event)]
         .filter(Boolean)
         .join(' | ')
     : t({ ID: 'Event berikutnya segera diumumkan', EN: 'Next event coming soon' })
   const countdownTarget = event?.tanggal ? new Date(`${event.tanggal}T00:00:00`) : null
-  const posterSrc = event?.gambar || '/coravfest.jpg'
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-10">
@@ -224,14 +225,18 @@ export default function Home() {
       )}
       {/* Hero */}
       <div className="relative rounded-3xl overflow-hidden min-h-[300px] md:h-[420px] flex shadow-2xl shadow-indigo-950/30">
-        <Image
-          src={posterSrc}
-          alt={heroTitle}
-          fill
-          priority
-          sizes="(max-width: 1184px) calc(100vw - 32px), 1152px"
-          className="object-cover"
-        />
+        {event?.gambar ? (
+          <Image
+            src={event.gambar}
+            alt={heroTitle}
+            fill
+            priority
+            sizes="(max-width: 1184px) calc(100vw - 32px), 1152px"
+            className="object-cover"
+          />
+        ) : (
+          <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-slate-900 to-violet-950" />
+        )}
         <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/25" />
         <div className="absolute inset-0 bg-gradient-to-r from-indigo-950/50 via-transparent to-transparent" />
         {/* Glow dekoratif */}
@@ -241,7 +246,11 @@ export default function Home() {
         <div className="relative mt-auto w-full p-5 sm:p-6 md:p-10 flex flex-col md:flex-row md:items-end gap-4 sm:gap-6 justify-between">
           <div className="max-w-2xl">
             {/* Badge status */}
-            {event ? (
+            {event && salesClosed ? (
+              <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-amber-200 bg-amber-400/15 backdrop-blur-md border border-amber-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
+                {t({ ID: 'Penjualan Ditutup', EN: 'Sales Closed' })}
+              </span>
+            ) : event ? (
               <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-emerald-200 bg-emerald-400/15 backdrop-blur-md border border-emerald-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-300 opacity-75" />
@@ -303,13 +312,22 @@ export default function Home() {
             {/* CTA */}
             {event && (
               <div className="hidden sm:flex flex-wrap items-center gap-2.5 sm:gap-3 mt-5">
-                <Link
-                  href="/tiket"
-                  className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold px-5 py-3 sm:px-7 sm:py-3.5 rounded-full transition-all shadow-lg shadow-indigo-950/50 hover:shadow-indigo-900/60 hover:-translate-y-0.5"
-                >
-                  {t({ ID: 'Beli Tiket Sekarang', EN: 'Buy Tickets Now' })}
-                  <span aria-hidden>→</span>
-                </Link>
+                {salesClosed ? (
+                  <Link
+                    href="/tiket"
+                    className="inline-flex items-center gap-2 bg-white/10 border border-white/30 text-white text-sm font-semibold px-5 py-3 sm:px-7 sm:py-3.5 rounded-full transition-all hover:bg-white/15"
+                  >
+                    {t({ ID: 'Penjualan Tiket Ditutup', EN: 'Ticket Sales Closed' })}
+                  </Link>
+                ) : (
+                  <Link
+                    href="/tiket"
+                    className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold px-5 py-3 sm:px-7 sm:py-3.5 rounded-full transition-all shadow-lg shadow-indigo-950/50 hover:shadow-indigo-900/60 hover:-translate-y-0.5"
+                  >
+                    {t({ ID: 'Beli Tiket Sekarang', EN: 'Buy Tickets Now' })}
+                    <span aria-hidden>→</span>
+                  </Link>
+                )}
                 <button
                   type="button"
                   onClick={() => scrollToSection('Line Up')}
@@ -369,29 +387,6 @@ export default function Home() {
 
             <hr className="border-gray-100" />
 
-            {/* Section Syarat & Ketentuan */}
-            <div id="section-syarat" className="scroll-mt-6">
-              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">
-                {t({ ID: 'Syarat dan Ketentuan', EN: 'Terms and Conditions' })}
-              </h2>
-
-              {event?.syarat_ketentuan ? (
-                <div className="space-y-3 sm:space-y-4 text-[15px] sm:text-base text-gray-600">
-                  {event.syarat_ketentuan.split('\n').filter((s) => s.trim()).map((s, i) => (
-                    <p key={i} className="pl-5">{i + 1}. {s}</p>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-base text-gray-400">
-                  {event
-                    ? t({ ID: 'Belum ada syarat & ketentuan.', EN: 'No terms & conditions yet.' })
-                    : noEventText}
-                </p>
-              )}
-            </div>
-
-            <hr className="border-gray-100" />
-
             {/* Section Line Up */}
             <div id="section-lineup" className="scroll-mt-6">
               <h3 className="text-base sm:text-lg font-bold text-gray-900 mb-3 sm:mb-4">{t({ ID: 'Line Up', EN: 'Line Up' })}</h3>
@@ -420,6 +415,29 @@ export default function Home() {
               )}
             </div>
 
+            <hr className="border-gray-100" />
+
+            {/* Section Syarat & Ketentuan */}
+            <div id="section-syarat" className="scroll-mt-6">
+              <h2 className="text-lg sm:text-xl font-bold text-gray-900 mb-3 sm:mb-4">
+                {t({ ID: 'Syarat dan Ketentuan', EN: 'Terms and Conditions' })}
+              </h2>
+
+              {event?.syarat_ketentuan ? (
+                <div className="space-y-3 sm:space-y-4 text-[15px] sm:text-base text-gray-600">
+                  {event.syarat_ketentuan.split('\n').filter((s) => s.trim()).map((s, i) => (
+                    <p key={i} className="pl-5">{i + 1}. {s}</p>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-base text-gray-400">
+                  {event
+                    ? t({ ID: 'Belum ada syarat & ketentuan.', EN: 'No terms & conditions yet.' })
+                    : noEventText}
+                </p>
+              )}
+            </div>
+
           </div>
         </div>
 
@@ -428,13 +446,17 @@ export default function Home() {
           <div className="lg:sticky lg:top-20 space-y-4">
             <div className="border border-gray-200 rounded-xl overflow-hidden">
             <div className="relative h-40 w-full">
-              <Image
-                src={posterSrc}
-                alt={`Poster ${heroTitle}`}
-                fill
-                sizes="(max-width: 1024px) 100vw, 33vw"
-                className="object-cover"
-              />
+              {event?.gambar ? (
+                <Image
+                  src={event.gambar}
+                  alt={`Poster ${heroTitle}`}
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 33vw"
+                  className="object-cover"
+                />
+              ) : (
+                <div className="h-full w-full bg-gradient-to-br from-indigo-950 via-slate-900 to-violet-950" />
+              )}
             </div>
 
             <div className="p-4 sm:p-5">
@@ -630,14 +652,14 @@ export default function Home() {
       {/* Sticky bottom CTA bar — hanya di HP */}
       {event && (
         <StickyBottomBar
-          label={t({ ID: 'Mulai dari', EN: 'Starting from' })}
-          value={minTicketPrice == null ? 'Rp ...' : 'Rp ' + minTicketPrice.toLocaleString('id-ID')}
+          label={salesClosed ? t({ ID: 'Penjualan ditutup', EN: 'Sales closed' }) : t({ ID: 'Mulai dari', EN: 'Starting from' })}
+          value={salesClosed ? '-' : minTicketPrice == null ? 'Rp ...' : 'Rp ' + minTicketPrice.toLocaleString('id-ID')}
         >
           <Link
             href="/tiket"
             className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-bold px-6 py-3 rounded-full shadow-md shadow-indigo-950/20"
           >
-            {t({ ID: 'Beli Tiket', EN: 'Buy Ticket' })}
+            {salesClosed ? t({ ID: 'Lihat Tiket', EN: 'View Tickets' }) : t({ ID: 'Beli Tiket', EN: 'Buy Ticket' })}
             <span aria-hidden>→</span>
           </Link>
         </StickyBottomBar>

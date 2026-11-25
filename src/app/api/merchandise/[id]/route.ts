@@ -1,8 +1,8 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay } from '../../../lib/events'
 import { MERCH_SIZES, sizeColumn, withSisaStok } from '../../../lib/merchStok'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,6 +42,8 @@ export async function PATCH(
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const body = await request.json()
     const supabase = getServerSupabase()
@@ -81,6 +83,8 @@ export async function DELETE(
   try {
     const auth = requireRole(_request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(_request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const supabase = getServerSupabase()
     const { error } = await supabase.from('merchandise').delete().eq('id', id)

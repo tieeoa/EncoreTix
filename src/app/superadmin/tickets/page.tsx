@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import EventSelector from '@/components/EventSelector'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useSelectedEventStatus } from '@/lib/useEventStatus'
 import { useLang } from '@/lib/i18n'
@@ -58,7 +58,7 @@ export default function SuperAdminTicketsPage() {
 
   const load = () => {
     const url = eventId ? `/api/tickets?event=${encodeURIComponent(eventId)}` : '/api/tickets'
-    fetch(url)
+    adminFetch(url)
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -90,7 +90,7 @@ export default function SuperAdminTicketsPage() {
     }
     setBusy(true)
     try {
-      const res = await fetch(`/api/tickets/${editForm.id}`, {
+      const res = await adminFetch(`/api/tickets/${editForm.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -120,7 +120,7 @@ export default function SuperAdminTicketsPage() {
     }
     if (!confirm(`${t({ ID: 'Hapus tiket', EN: 'Delete ticket' })} ${tk.kategori}?`)) return
     try {
-      const res = await fetch(`/api/tickets/${tk.id}`, { method: 'DELETE' })
+      const res = await adminFetch(`/api/tickets/${tk.id}`, { method: 'DELETE' })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal menghapus', EN: 'Failed to delete' }))
       load()
@@ -134,7 +134,7 @@ export default function SuperAdminTicketsPage() {
     const next = (tk.status ?? 'aktif') === 'aktif' ? 'nonaktif' : 'aktif'
     setBusy(true)
     try {
-      const res = await fetch(`/api/tickets/${tk.id}`, {
+      const res = await adminFetch(`/api/tickets/${tk.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: next }),
@@ -163,7 +163,7 @@ export default function SuperAdminTicketsPage() {
     }
     setBusy(true)
     try {
-      const res = await fetch('/api/tickets', {
+      const res = await adminFetch('/api/tickets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

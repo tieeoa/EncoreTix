@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { selectEventId } from '@/lib/eventStore'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
+import { todayISO } from '@/app/lib/events'
 import Toast from '@/components/Toast'
 import LoadingDots from '@/components/LoadingDots'
 
@@ -56,7 +57,7 @@ export default function SuperAdminEventsPage() {
   const [finishing, setFinishing] = useState(false)
 
   const load = () => {
-    fetch('/api/events')
+    adminFetch('/api/events')
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -114,7 +115,7 @@ export default function SuperAdminEventsPage() {
       const fd = new FormData()
       fd.append('file', posterFile)
       fd.append('bucket', 'event-posters')
-      const res = await fetch('/api/uploads', { method: 'POST', body: fd })
+      const res = await adminFetch('/api/uploads', { method: 'POST', body: fd })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal upload poster', EN: 'Failed to upload poster' }))
       return result.url as string
@@ -148,13 +149,13 @@ export default function SuperAdminEventsPage() {
       let res: Response
       if (editing) {
         // Status event diubah lewat tombol, bukan form — jangan sentuh saat edit.
-        res = await fetch(`/api/events/${editing}`, {
+        res = await adminFetch(`/api/events/${editing}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         })
       } else {
-        res = await fetch('/api/events', {
+        res = await adminFetch('/api/events', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ...payload, status: 'paused' }),
@@ -181,7 +182,7 @@ export default function SuperAdminEventsPage() {
     setFinishing(true)
     setError('')
     try {
-      const res = await fetch(`/api/events/${ev.id}`, {
+      const res = await adminFetch(`/api/events/${ev.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: 'closed' }),
@@ -202,7 +203,7 @@ export default function SuperAdminEventsPage() {
     setStatusBusy(ev.id)
     setError('')
     try {
-      const res = await fetch(`/api/events/${ev.id}`, {
+      const res = await adminFetch(`/api/events/${ev.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: next }),
@@ -221,7 +222,7 @@ export default function SuperAdminEventsPage() {
     if (!confirm(`${t({ ID: 'Hapus event', EN: 'Delete event' })} "${ev.nama_event}"?`)) return
     setError('')
     try {
-      const res = await fetch(`/api/events/${ev.id}`, { method: 'DELETE' })
+      const res = await adminFetch(`/api/events/${ev.id}`, { method: 'DELETE' })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal menghapus event', EN: 'Failed to delete event' }))
       load()
@@ -230,9 +231,9 @@ export default function SuperAdminEventsPage() {
     }
   }
 
-  // Event dianggap "selesai" bila statusnya 'closed' ATAU tanggal sudah lewat/hari-H.
+  // Event dianggap "selesai" bila statusnya 'closed' ATAU tanggal sudah lewat.
   const isFinishedEvent = (ev: EventRow) =>
-    ev.status === 'closed' || (!!ev.tanggal && ev.tanggal <= new Date().toISOString().slice(0, 10))
+    ev.status === 'closed' || (!!ev.tanggal && ev.tanggal < todayISO())
 
   const statusBadge = (status: string) => {
     if (status === 'active') {

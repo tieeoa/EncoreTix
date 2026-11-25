@@ -15,15 +15,22 @@ export interface EventInfo {
   updated_at: string
 }
 
-const todayISO = () => new Date().toISOString().slice(0, 10)
+export const todayISO = () =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
 
-// Event dianggap "selesai" bila statusnya 'closed' ATAU tanggalnya sudah lewat / hari-H.
+// Event dianggap "selesai" bila statusnya 'closed' ATAU tanggalnya sudah lewat.
+// Hari-H masih dianggap berlangsung; penjualan ditutup terpisah.
 export function isEventFinished(e: { status?: string | null; tanggal?: string | null }): boolean {
   if (e.status === 'closed') return true
-  return !!e.tanggal && todayISO() >= e.tanggal
+  return !!e.tanggal && todayISO() > e.tanggal
 }
 
-// Otomatis tutup event yang tanggalnya sudah sampai/lewat (status -> 'closed').
+// Otomatis tutup event yang tanggalnya sudah lewat (status -> 'closed').
 // Idempotent: hanya menulis bila ada yang perlu ditutup, dan tidak melempar
 // error (return [] bila gagal) supaya tidak menggagalkan request baca.
 // Mengembalikan daftar event yang baru saja ditutup.
@@ -32,7 +39,7 @@ export async function autoClosePastEvents(
   events: EventInfo[]
 ): Promise<EventInfo[]> {
   const due = events.filter(
-    (e) => e.status !== 'closed' && !!e.tanggal && todayISO() >= e.tanggal
+    (e) => e.status !== 'closed' && !!e.tanggal && todayISO() > e.tanggal
   )
   if (due.length === 0) return []
   const { error } = await supabase
@@ -66,14 +73,20 @@ export async function getEventById(supabase: SupabaseClient, id: string): Promis
   return (data as EventInfo) ?? null
 }
 
-// Event yang sedang berjalan/aktif (status 'active', lebih suka yang tanggalnya belum lewat).
+// Event yang sedang berjalan/aktif di web.
+// Event yang ditutup manual oleh superadmin tetap tampil sampai tanggalnya lewat
+// (penjualannya sudah ditutup lewat isTicketSalesClosed), agar pembeli tidak
+// mengira tidak ada event. Setelah tanggal lewat, baru tidak ada event aktif.
 export async function getActiveEvent(supabase: SupabaseClient): Promise<EventInfo | null> {
   const all = await getAllEvents(supabase)
   const justClosed = new Set((await autoClosePastEvents(supabase, all)).map((e) => e.id))
-  const actives = all.filter((e) => e.status === 'active' && !justClosed.has(e.id))
-  if (actives.length === 0) return null
-  const upcoming = actives.filter((e) => !e.tanggal || e.tanggal >= todayISO())
-  return (upcoming.length > 0 ? upcoming : actives)[0] ?? null
+  const candidates = all.filter(
+    (e) =>
+      (e.status === 'active' || e.status === 'closed') &&
+      !justClosed.has(e.id) &&
+      (!e.tanggal || e.tanggal >= todayISO())
+  )
+  return candidates.find((e) => e.status === 'active') ?? candidates[0] ?? null
 }
 
 // Pastikan hanya event `keepId` yang berstatus 'active'; sisanya di-'paused'.
@@ -124,5 +137,5 @@ export function formatEventDisplay(e: EventInfo | null | undefined): EventDispla
   }
   const jam = e?.waktu || '-'
   const lokasi = [e?.venue, e?.alamat].filter(Boolean).join(', ') || '-'
-  return { nama_event: e?.nama_event || 'CoravFest', tanggal, jam, lokasi, gambar: e?.gambar ?? null }
+  return { nama_event: e?.nama_event || 'Event EncoreTix', tanggal, jam, lokasi, gambar: e?.gambar ?? null }
 }

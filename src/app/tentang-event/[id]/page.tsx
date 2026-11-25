@@ -273,6 +273,7 @@ export default function TentangEventDetailPage() {
   const [event, setEvent] = useState<EventData | null>(null)
   const [lineUp, setLineUp] = useState<LineUpBand[]>([])
   const [kapasitas, setKapasitas] = useState<number | null>(null)
+  const [salesClosed, setSalesClosed] = useState(false)
   const [rekap, setRekap] = useState<{ tiket: number; merch: number } | null>(null)
   const [others, setOthers] = useState<EventData[]>([])
   const [error, setError] = useState('')
@@ -304,6 +305,7 @@ export default function TentangEventDetailPage() {
         if (!res.error) {
           const total = (res.data || []).reduce((sum: number, tk: { kuota?: number }) => sum + Number(tk.kuota || 0), 0)
           setKapasitas(total || null)
+          setSalesClosed(!!res.sales_closed)
         }
       })
       .catch(() => setKapasitas(null))
@@ -351,7 +353,9 @@ export default function TentangEventDetailPage() {
     )
   }
 
-  const isFinished = event.status === 'closed' || (!!event.tanggal && new Date(`${event.tanggal}T00:00:00`).getTime() <= nowMs)
+  // Di web, event yang ditutup manual tetap tampil normal dengan penjualan ditutup.
+  // Yang benar-benar "selesai" hanya setelah tanggalnya lewat.
+  const isFinished = !!event.tanggal && new Date(`${event.tanggal}T00:00:00`).getTime() < nowMs
 
   return (
     <div className="bg-white min-h-screen">
@@ -578,7 +582,9 @@ export default function TentangEventDetailPage() {
               </span>
               {isFinished
                 ? t({ ID: 'Edisi ini telah selesai & tersimpan', EN: 'This edition has finished & is archived' })
-                : t({ ID: 'Penjualan Tiket Sedang Berlangsung!', EN: 'Ticket Sales Are Now Ongoing!' })}
+                : salesClosed
+                  ? t({ ID: 'Penjualan Tiket Ditutup', EN: 'Ticket Sales Closed' })
+                  : t({ ID: 'Penjualan Tiket Sedang Berlangsung!', EN: 'Ticket Sales Are Now Ongoing!' })}
             </div>
 
             <h2 className="text-3xl lg:text-[40px] font-bold text-white mb-6 leading-[1.2] tracking-tight">
@@ -600,7 +606,11 @@ export default function TentangEventDetailPage() {
             <div className="flex flex-col sm:flex-row gap-4 mb-12">
               <Link href={isFinished ? '/' : '/tiket'} className="bg-white hover:bg-indigo-50 text-indigo-600 px-8 py-3.5 rounded-xl font-bold transition-colors flex items-center justify-center gap-2 text-sm">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                {isFinished ? t({ ID: 'Kembali ke Beranda', EN: 'Back to Home' }) : t({ ID: 'Beli Tiket Sekarang', EN: 'Buy Tickets Now' })}
+                {isFinished
+                  ? t({ ID: 'Kembali ke Beranda', EN: 'Back to Home' })
+                  : salesClosed
+                    ? t({ ID: 'Lihat Tiket', EN: 'View Tickets' })
+                    : t({ ID: 'Beli Tiket Sekarang', EN: 'Buy Tickets Now' })}
               </Link>
               {!isFinished && (
                 <Link href="/merchandise" className="bg-transparent hover:bg-white/10 border border-white/30 text-white px-8 py-3.5 rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 backdrop-blur-sm text-sm">

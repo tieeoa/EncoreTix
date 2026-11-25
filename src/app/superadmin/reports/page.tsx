@@ -6,7 +6,7 @@ import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import EventSelector from '@/components/EventSelector'
 import LoadingDots from '@/components/LoadingDots'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useSelectedEventStatus } from '@/lib/useEventStatus'
 import { useLang } from '@/lib/i18n'
@@ -133,7 +133,7 @@ export default function SuperAdminReportsPage() {
       return
     }
     const url = eventId ? `/api/dashboard/stats?event=${encodeURIComponent(eventId)}` : '/api/dashboard/stats'
-    fetch(url)
+    adminFetch(url)
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -149,7 +149,7 @@ export default function SuperAdminReportsPage() {
     setDlError('')
     try {
       const url = eventId ? `/api/reports/pdf?event=${encodeURIComponent(eventId)}` : '/api/reports/pdf'
-      const res = await fetch(url)
+      const res = await adminFetch(url)
       if (!res.ok) {
         const err = await res.json().catch(() => null)
         throw new Error(err?.error || 'Gagal membuat laporan')

@@ -1,11 +1,11 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay, getActiveEvent } from '../../../lib/events'
 import { sendTicketEmailForBooking } from '../../../lib/ticketSender'
-import { checkRateLimit, getClientIp, rateLimitResponse } from '../../../lib/rateLimit'
+import { checkRateLimit, getClientIp, rateLimitResponse, recordFailedCodeLookup, clearFailedCodeLookups, codeLockResponse } from '../../../lib/rateLimit'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 import { parseJsonArray, resolvePemesan, mergeHolder, type PartySnapshot, type HolderInfo } from '@/app/lib/orderSnapshot'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation, getSessionFromRequest } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -42,8 +42,12 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ bookingCode: string }> }
 ) {
+  const clientIp = getClientIp(request)
+  const isAdmin = Boolean(getSessionFromRequest(request))
+  const codeKey = `code-lookup:${clientIp}`
+
   // Rate limit: maks 30 lookup per menit per IP
-  const rl = checkRateLimit(`lookup:${getClientIp(request)}`, { max: 30, windowMs: 60_000 })
+  const rl = checkRateLimit(`lookup:${clientIp}`, { max: 30, windowMs: 60_000 })
   if (!rl.allowed) return rateLimitResponse(rl.resetAt)
 
   try {
@@ -58,8 +62,14 @@ export async function GET(
       .maybeSingle()
     if (error) throw new Error(error.message)
     if (!pesanan) {
+      if (!isAdmin) {
+        const lock = recordFailedCodeLookup(codeKey)
+        if (lock.locked) return codeLockResponse(lock.resetAt)
+      }
       return NextResponse.json({ error: 'Pesanan tidak ditemukan' }, { status: 404 })
     }
+
+    if (!isAdmin) clearFailedCodeLookups(codeKey)
 
     // Auto-sync status langsung dengan Midtrans jika di database masih pending
     if (pesanan.status_bayar === 'pending') {
@@ -88,9 +98,9 @@ export async function GET(
 // PATCH /api/transactions/:bookingCode
 // Update status check-in (dipakai admin saat check-in).
 // Body:
-//   { status_check_in: 'sudah_check_in', ticketIndex?: number } → check-in 1 tiket
-//   { status_check_in: 'sudah_check_in', all: true }            → check-in semua tiket
-//   { status_check_in: 'belum_check_in' }                       → reset semua
+//   { status_check_in: 'sudah_check_in', ticketIndex?: number } — check-in 1 tiket
+//   { status_check_in: 'sudah_check_in', all: true }            — check-in semua tiket
+//   { status_check_in: 'belum_check_in' }                       — reset semua
 // Nomor tiket juga bisa dikirim lewat suffix kode (mis. ETX-XXXX-2).
 export async function PATCH(
   request: Request,
@@ -103,6 +113,8 @@ export async function PATCH(
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const { bookingCode } = await params
     const { bookingCode: baseCode, ticketIndex } = parseTicketCode(decodeURIComponent(bookingCode))
     const body = await request.json()
@@ -122,7 +134,7 @@ export async function PATCH(
     if (body.status_check_in !== 'sudah_check_in') {
       const { data, error } = await supabase
         .from('pesanan_tiket')
-        .update({ status_check_in: body.status_check_in, tiket_check_in: [] })
+        .update({ status_check_in: body.status_check_in, tiket_check_in: [], checked_in_by: null })
         .eq('booking_id', baseCode)
         .select()
         .single()
@@ -137,8 +149,14 @@ export async function PATCH(
     // Validasi per-event: hanya tiket milik event yang sedang berjalan
     // yang boleh check-in (mencegah tiket event lain dipakai di gate ini).
     const activeEvent = await getActiveEvent(supabase)
+    if (!activeEvent) {
+      return NextResponse.json(
+        { error: 'Belum ada event aktif. Check-in tidak dapat dilakukan.', code: 'NO_ACTIVE_EVENT' },
+        { status: 409 }
+      )
+    }
     const orderEventId = (existing.tiket as { id_event?: string | null } | null)?.id_event ?? null
-    if (activeEvent && orderEventId && String(orderEventId) !== String(activeEvent.id)) {
+    if (activeEvent && String(orderEventId) !== String(activeEvent.id)) {
       return NextResponse.json(
         { error: `Tiket ini bukan untuk${activeEvent.nama_event ? ` "${activeEvent.nama_event}"` : ' event yang sedang berjalan'}. Check-in ditolak.`, code: 'WRONG_EVENT' },
         { status: 403 }
@@ -159,7 +177,7 @@ export async function PATCH(
         }
         targets = [idx]
       } else {
-        // Tanpa nomor tiket → anggap check-in semua (kompatibel dengan perilaku lama).
+        // Tanpa nomor tiket — anggap check-in semua (kompatibel dengan perilaku lama).
         targets = Array.from({ length: jumlah }, (_, i) => i + 1)
       }
     }
@@ -184,9 +202,13 @@ export async function PATCH(
       .sort((a, b) => a - b)
     const newStatus = jumlah > 0 && merged.length >= jumlah ? 'sudah_check_in' : 'belum_check_in'
 
+    const updatePayload: Record<string, unknown> = { status_check_in: newStatus, tiket_check_in: merged }
+    // Catat aktor verifikasi/check-in (tampilan tetap keseluruhan).
+    if (newTargets.length > 0) updatePayload.checked_in_by = auth.session.id
+
     const { data, error } = await supabase
       .from('pesanan_tiket')
-      .update({ status_check_in: newStatus, tiket_check_in: merged })
+      .update(updatePayload)
       .eq('booking_id', baseCode)
       .select()
       .single()
@@ -207,6 +229,8 @@ export async function POST(
   try {
     const auth = requireRole(_request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(_request, auth.session)
+    if (ro) return ro
     const { bookingCode } = await params
     const { bookingCode: baseCode } = parseTicketCode(decodeURIComponent(bookingCode))
     const supabase = getServerSupabase()

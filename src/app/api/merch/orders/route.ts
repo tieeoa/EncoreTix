@@ -10,7 +10,7 @@ import {
 import { resolveEventId } from '../../../lib/events'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 import { parseJsonObject, type PartySnapshot } from '../../../lib/orderSnapshot'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -104,6 +104,12 @@ export async function POST(request: Request) {
     const supabase = getServerSupabase()
     // Produk hanya boleh dipesan untuk event yang sedang berlangsung.
     const activeEventId = await resolveEventId(supabase, null)
+    if (!activeEventId) {
+      return NextResponse.json(
+        { error: 'Belum ada event aktif. Penjualan merchandise sedang ditutup.' },
+        { status: 400 }
+      )
+    }
 
     // Validasi setiap item: ukuran, status produk, stok.
     // Validasi sengaja dilakukan SEBELUM membuat customer agar pesanan yang
@@ -257,6 +263,8 @@ export async function GET(request: Request) {
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const supabase = getServerSupabase()
     await expireExpiredPendingOrders(supabase)
     const { searchParams } = new URL(request.url)
@@ -313,7 +321,7 @@ export async function GET(request: Request) {
 function withPemesanSnapshot<T extends Record<string, unknown>>(rows: T[]): T[] {
   return rows.map((r) => {
     const snap = parseJsonObject<PartySnapshot>(r.pemesan_data)
-    const customers = r.customers as { nama?: string | null; email?: string | null } | null
+    const customers = r.customers as { nama?: string | null; email?: string | null; no_hp?: string | null } | null
     if (!customers) return r
     return {
       ...r,
@@ -321,6 +329,7 @@ function withPemesanSnapshot<T extends Record<string, unknown>>(rows: T[]): T[] 
         ...customers,
         nama: snap?.nama || (r.nama_pemesan as string | null) || customers.nama,
         email: snap?.email || (r.email_pemesan as string | null) || customers.email,
+        no_hp: snap?.no_hp || null,
       },
     }
   })

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
 import { MERCH_SIZES, sizeColumn, withSisaStok } from '../../lib/merchStok'
 import { resolveEventId } from '../../lib/events'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,6 +14,7 @@ export async function GET(request: Request) {
     const supabase = getServerSupabase()
     const { searchParams } = new URL(request.url)
     const eventId = await resolveEventId(supabase, searchParams.get('event'))
+    if (!eventId) return NextResponse.json({ data: [] })
 
     let query = supabase.from('merchandise').select('*, band(*)')
     if (eventId) {
@@ -37,6 +38,8 @@ export async function POST(request: Request) {
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const body = await request.json()
     if (!body.nama_merch || !body.harga) {
       return NextResponse.json({ error: 'Nama dan harga wajib diisi' }, { status: 400 })

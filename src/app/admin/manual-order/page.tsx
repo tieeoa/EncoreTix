@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import AdminSidebar from '@/components/layout/AdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
 import {
@@ -61,7 +61,7 @@ const EMPTY_PERSON: PersonData = {
   whatsapp: EMPTY_DIGITS,
 }
 
-const PAYMENT_METHODS = ['Tunai', 'Transfer Bank', 'QRIS', 'Kartu Debit/Kredit']
+const PAYMENT_METHODS = ['Tunai', 'Non-Tunai']
 const FORM_STORAGE_KEY = 'encoretix_manual_order_data'
 
 function formatRupiah(n: number) {
@@ -194,7 +194,7 @@ export default function AdminManualOrderPage() {
   }, [pemesan, owners, isSameAsPemesan, tiketId, qty, metode])
 
   const loadRecent = () => {
-    fetch('/api/transactions?source=offline')
+    adminFetch('/api/transactions?source=offline')
       .then((r) => r.json())
       .then((res) => {
         if (!res.error) {
@@ -210,7 +210,7 @@ export default function AdminManualOrderPage() {
       router.replace('/admin/login')
       return
     }
-    fetch('/api/tickets')
+    adminFetch('/api/tickets')
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -292,7 +292,7 @@ export default function AdminManualOrderPage() {
     setBusy(true)
     setError('')
     try {
-      const res = await fetch('/api/transactions', {
+      const res = await adminFetch('/api/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -340,7 +340,7 @@ export default function AdminManualOrderPage() {
         loadRecent()
       } else {
         router.push(
-          `/payment?booking=${encodeURIComponent(result.data.booking_id)}`
+          `/admin/manual-order/payment?booking=${encodeURIComponent(result.data.booking_id)}`
         )
       }
     } catch (err) {
@@ -568,7 +568,7 @@ export default function AdminManualOrderPage() {
                         <select required value={tiketId} onChange={(e) => setTiketId(e.target.value)} className={INPUT_CLS}>
                           {tickets.map((tick) => (
                             <option key={tick.id} value={tick.id}>
-                              {tick.kategori} — {t({ ID: 'sisa', EN: 'remaining' })} {tick.sisa_kuota}{(tick.status ?? 'aktif') === 'nonaktif' ? ' (Nonaktif — offline saja)' : ''}
+                              {tick.kategori} — {t({ ID: 'sisa', EN: 'remaining' })} {tick.sisa_kuota}{(tick.status ?? 'aktif') === 'nonaktif' ? ' (Nonaktif)' : ''}
                             </option>
                           ))}
                         </select>
@@ -593,11 +593,11 @@ export default function AdminManualOrderPage() {
                         <select value={metode} onChange={(e) => setMetode(e.target.value)} className={INPUT_CLS}>
                           {PAYMENT_METHODS.map((m) => <option key={m}>{m}</option>)}
                         </select>
-                        <p className="text-xs font-medium text-slate-600 mt-1">
-                          {metode === 'Tunai'
-                            ? t({ ID: 'Pembayaran langsung lunas saat pesanan dibuat.', EN: 'Payment is settled immediately when the order is created.' })
-                            : t({ ID: 'Setelah order dibuat, akan diarahkan ke halaman pembayaran untuk verifikasi.', EN: 'After the order is created, you will be directed to the payment page for verification.' })}
-                        </p>
+                        {metode === 'Tunai' && (
+                          <p className="text-xs font-medium text-slate-600 mt-1">
+                            {t({ ID: 'Pembayaran langsung lunas saat pesanan dibuat.', EN: 'Payment is settled immediately when the order is created.' })}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -610,7 +610,7 @@ export default function AdminManualOrderPage() {
                     </div>
 
                     <button type="submit" disabled={busy || readOnly} className="w-full mt-6 py-3.5 rounded-xl bg-[#0057e7] hover:bg-[#0048c2] text-white font-semibold text-sm transition-all shadow-sm shadow-blue-500/20 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed">
-                      {busy ? <>{t({ ID: 'Menyimpan', EN: 'Saving' })}<LoadingDots /></> : metode === 'Tunai' ? t({ ID: 'Buat Order Sekarang →', EN: 'Create Order Now →' }) : t({ ID: 'Lanjut ke Pembayaran →', EN: 'Continue to Payment →' })}
+                      {busy ? <>{t({ ID: 'Menyimpan', EN: 'Saving' })}<LoadingDots /></> : metode === 'Tunai' ? t({ ID: 'Buat Order Sekarang →', EN: 'Create Order Now →' }) : t({ ID: 'Buat Order & Bayar di Dashboard →', EN: 'Create Order & Pay in Dashboard →' })}
                     </button>
                   </div>
                 </form>

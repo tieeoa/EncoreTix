@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import AdminSidebar from '@/components/layout/AdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import Pagination from '@/components/Pagination'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
 import { labelMetode } from '@/app/lib/paymentMethod'
@@ -102,14 +102,14 @@ export default function AdminTransactionsPage() {
       router.replace('/admin/login')
       return
     }
-    fetch('/api/events?active=true')
+    adminFetch('/api/events?active=true')
       .then((r) => r.json())
       .then((evRes) => {
         if (evRes.error) throw new Error(evRes.error)
         const active = evRes.data as { id: string; nama_event: string } | null
         setActiveEvent(active)
         const q = active ? `event=${encodeURIComponent(active.id)}&` : ''
-        return fetch(`/api/transactions?${q}source=offline`).then((r) => r.json())
+        return adminFetch(`/api/transactions?${q}source=offline`).then((r) => r.json())
       })
       .then((tiketRes) => {
         if (tiketRes.error) throw new Error(tiketRes.error)

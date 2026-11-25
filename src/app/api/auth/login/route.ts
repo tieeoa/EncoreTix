@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import bcrypt from 'bcryptjs'
 import { getServerSupabase } from '../../../lib/supabaseClient'
-import { createSessionToken, SESSION_COOKIE, SESSION_TTL_MS } from '@/lib/serverAuth'
+import { createSessionToken } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const supabase = getServerSupabase()
     const { data: user, error } = await supabase
       .from('panitia')
-      .select('id, nama, username, role, password')
+      .select('id, nama, username, role, password, status')
       .eq('username', username)
       .maybeSingle()
 
@@ -32,18 +32,17 @@ export async function POST(request: Request) {
       )
     }
 
+    if (user.role === 'admin' && (user.status ?? 'aktif') === 'nonaktif') {
+      return NextResponse.json(
+        { error: 'Akun admin dinonaktifkan. Hubungi superadmin.' },
+        { status: 403 }
+      )
+    }
+
     const token = createSessionToken({ id: user.id, role: user.role })
-    const res = NextResponse.json({
+    return NextResponse.json({
       data: { token, id: user.id, nama: user.nama, username: user.username, role: user.role },
     })
-    res.cookies.set(SESSION_COOKIE, token, {
-      httpOnly: true,
-      sameSite: 'lax',
-      path: '/',
-      maxAge: Math.floor(SESSION_TTL_MS / 1000),
-      secure: process.env.NODE_ENV === 'production',
-    })
-    return res
   } catch (err) {
     console.error('Login error:', err)
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'

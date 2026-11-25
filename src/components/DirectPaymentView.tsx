@@ -13,6 +13,7 @@ export interface DirectPaymentData {
   expiry_time?: string | null
   qr_url?: string | null
   qr_string?: string | null
+  deeplink_url?: string | null
   va_number?: string | null
   bank?: string | null
   bill_key?: string | null
@@ -86,6 +87,7 @@ export default function DirectPaymentView({
   }, [checkPaymentStatus, isPaid])
 
   const isQris = data.payment_method === 'qris' || data.payment_type === 'qris'
+  const isShopeepay = data.payment_method === 'shopeepay' || data.payment_type === 'shopeepay'
   const isCStore =
     data.payment_method === 'indomaret' ||
     data.payment_method === 'alfamart' ||
@@ -94,7 +96,7 @@ export default function DirectPaymentView({
     data.payment_method === 'echannel' ||
     data.payment_method === 'mandiri' ||
     data.payment_type === 'echannel'
-  const isBankTransfer = !isQris && !isCStore && !isEChannel
+  const isBankTransfer = !isQris && !isShopeepay && !isCStore && !isEChannel
 
   const bankName = (data.bank || data.payment_method.replace('_va', '')).toUpperCase()
 
@@ -108,6 +110,7 @@ export default function DirectPaymentView({
           </span>
           <h2 className="text-xl font-bold text-gray-900 mt-1">
             {isQris && 'Pembayaran QRIS'}
+            {isShopeepay && 'Pembayaran ShopeePay'}
             {isBankTransfer && `Virtual Account ${bankName}`}
             {isEChannel && 'Mandiri Bill Payment'}
             {isCStore && `Gerai ${data.payment_method.toUpperCase()}`}
@@ -224,7 +227,54 @@ export default function DirectPaymentView({
           </div>
         )}
 
-        {/* 2. KONTEN VIRTUAL ACCOUNT */}
+        {/* 2. KONTEN SHOPEEPAY */}
+        {isShopeepay && (
+          <div className="max-w-lg mx-auto space-y-6">
+            <div className="p-6 bg-gray-50 border border-gray-200 rounded-xl text-center">
+              <span className="text-[11px] text-gray-400 uppercase tracking-wider block">
+                Total pembayaran
+              </span>
+              <p className="text-2xl font-bold text-gray-900 my-2">
+                {formatRupiah(data.gross_amount)}
+              </p>
+              <span className="text-[11px] text-gray-400 block">
+                Bayar langsung melalui aplikasi Shopee
+              </span>
+            </div>
+
+            {data.deeplink_url ? (
+              <a
+                href={data.deeplink_url}
+                target="_blank"
+                rel="noreferrer"
+                className="w-full flex items-center justify-center gap-2 px-5 py-3.5 text-sm font-semibold rounded-xl bg-gradient-to-r from-orange-500 to-orange-600 hover:from-orange-400 hover:to-orange-500 text-white shadow-sm transition"
+              >
+                Buka Aplikasi Shopee
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                </svg>
+              </a>
+            ) : (
+              <p className="text-center text-xs text-gray-400">
+                Menyiapkan tautan pembayaran ShopeePay...
+              </p>
+            )}
+
+            <div className="pt-4 border-t border-gray-100">
+              <h4 className="text-xs font-semibold text-gray-900 mb-3 uppercase tracking-wider">
+                Langkah Pembayaran
+              </h4>
+              <ol className="space-y-1.5 text-xs text-gray-500 leading-relaxed list-decimal list-inside">
+                <li>Tekan tombol <strong>Buka Aplikasi Shopee</strong> di atas.</li>
+                <li>Periksa detail dan nominal tagihan di aplikasi Shopee.</li>
+                <li>Konfirmasi pembayaran dengan PIN ShopeePay.</li>
+                <li>Kembali ke halaman ini; status tiket akan diperbarui otomatis.</li>
+              </ol>
+            </div>
+          </div>
+        )}
+
+        {/* 3. KONTEN VIRTUAL ACCOUNT */}
         {isBankTransfer && (
           <div className="max-w-lg mx-auto space-y-6">
             <div className="p-5 bg-gray-50 border border-gray-200 rounded-xl">
@@ -275,7 +325,7 @@ export default function DirectPaymentView({
           </div>
         )}
 
-        {/* 3. KONTEN MANDIRI E-CHANNEL */}
+        {/* 4. KONTEN MANDIRI E-CHANNEL */}
         {isEChannel && (
           <div className="max-w-lg mx-auto space-y-6">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -324,7 +374,7 @@ export default function DirectPaymentView({
           </div>
         )}
 
-        {/* 4. KONTEN RETAIL */}
+        {/* 5. KONTEN RETAIL */}
         {isCStore && (
           <div className="max-w-lg mx-auto space-y-6">
             <div className="p-5 bg-gray-50 border border-gray-200 rounded-xl text-center">

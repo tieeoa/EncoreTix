@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import AdminSidebar from '@/components/layout/AdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
 import { extractScanCode } from '@/app/lib/scanCode'
@@ -107,6 +107,7 @@ export default function AdminMerchVerificationPage() {
   const [wrongEventName, setWrongEventName] = useState('')
   // Event yang sedang berjalan — daftar & hasil scan dibatasi untuk event ini.
   const [activeEvent, setActiveEvent] = useState<{ id: string; nama_event: string } | null>(null)
+  const [eventChecked, setEventChecked] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [searchFilter, setSearchFilter] = useState('')
@@ -126,7 +127,7 @@ export default function AdminMerchVerificationPage() {
   )
 
   const loadOrders = () => {
-    fetch('/api/merch/orders')
+    adminFetch('/api/merch/orders')
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -142,12 +143,13 @@ export default function AdminMerchVerificationPage() {
       return
     }
     loadOrders()
-    fetch('/api/events?active=true')
+    adminFetch('/api/events?active=true')
       .then((r) => r.json())
       .then((res) => {
         if (res.data?.id) setActiveEvent({ id: res.data.id, nama_event: res.data.nama_event || '' })
+        setEventChecked(true)
       })
-      .catch(() => {})
+      .catch(() => setEventChecked(true))
   }, [router])
 
   const handleScanWithCode = async (code: string) => {
@@ -165,11 +167,11 @@ export default function AdminMerchVerificationPage() {
     }
     // Tidak ada di daftar event aktif — cek apakah kode milik event lain.
     try {
-      const res = await fetch(`/api/merch/orders/${encodeURIComponent(normalized)}`)
+      const res = await adminFetch(`/api/merch/orders/${encodeURIComponent(normalized)}`)
       const result = await res.json()
       if (res.ok && result.data) {
         const otherEventId = result.data.items?.[0]?.merchandise?.id_event ?? null
-        if (otherEventId && activeEvent && String(otherEventId) !== String(activeEvent.id)) {
+        if (activeEvent && String(otherEventId ?? '') !== String(activeEvent.id)) {
           setScanResult(null)
           setWrongEventName(result.data.event?.nama_event || '-')
           setScanStatus('wrong-event')
@@ -198,7 +200,7 @@ export default function AdminMerchVerificationPage() {
     }
     setBusy(true)
     try {
-      const res = await fetch(`/api/merch/orders/${encodeURIComponent(group.kode)}`, {
+      const res = await adminFetch(`/api/merch/orders/${encodeURIComponent(group.kode)}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -242,7 +244,7 @@ export default function AdminMerchVerificationPage() {
       const fd = new FormData()
       fd.append('file', proofFile)
       fd.append('bucket', 'pickup-proofs')
-      const upRes = await fetch('/api/uploads', { method: 'POST', body: fd })
+      const upRes = await adminFetch('/api/uploads', { method: 'POST', body: fd })
       const upResult = await upRes.json()
       if (!upRes.ok) throw new Error(upResult.error || t({ ID: 'Gagal upload bukti', EN: 'Failed to upload proof' }))
       await verifyOrder(scanResult, 'sudah_diambil', upResult.url)
@@ -301,6 +303,11 @@ export default function AdminMerchVerificationPage() {
             {activeEvent && (
               <p className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 mt-3 inline-block">
                 {t({ ID: 'Verifikasi untuk:', EN: 'Verifying for:' })} {activeEvent.nama_event}
+              </p>
+            )}
+            {eventChecked && !activeEvent && (
+              <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mt-3 inline-block">
+                {t({ ID: 'Belum ada event aktif. Verifikasi pengambilan sedang dinonaktifkan.', EN: 'No active event. Merchandise pickup verification is disabled.' })}
               </p>
             )}
             {error && <Toast ok={false} text={error} onClose={() => setError('')} className="mt-3" />}
@@ -652,7 +659,9 @@ export default function AdminMerchVerificationPage() {
                           <tr key={g.kode} className="hover:bg-slate-50/70 transition-colors">
                             <td className="px-6 py-4">
                               <p className="font-medium text-slate-900">{g.nama}</p>
-                              <p className="text-[11px] font-mono text-slate-400 mt-0.5">{g.kode}</p>
+                              {isTaken && (
+                                <p className="text-[11px] font-mono text-slate-400 mt-0.5">{g.kode}</p>
+                              )}
                             </td>
                             <td className="px-6 py-4 text-slate-600 text-xs align-top">
                               <ul className="space-y-0.5">

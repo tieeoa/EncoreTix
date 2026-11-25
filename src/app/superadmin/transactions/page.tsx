@@ -7,7 +7,7 @@ import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import Pagination from '@/components/Pagination'
 import EventSelector from '@/components/EventSelector'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useSelectedEventStatus } from '@/lib/useEventStatus'
 import { useLang } from '@/lib/i18n'
@@ -28,7 +28,7 @@ interface TiketTransaksi {
   metode_pembayaran?: string | null
   nama_pemesan?: string | null
   email_pemesan?: string | null
-  customers: { nama: string; email: string } | null
+  customers: { nama: string; email: string; no_hp?: string | null } | null
   tiket: { kategori: string; harga: number } | null
   voucher: { kode_voucher: string; nominal_diskon: number } | null
   pembayaran: { metode_pembayaran?: string | null; total_bayar?: number | null } | null
@@ -47,7 +47,7 @@ interface MerchTransaksi {
   metode_pembayaran?: string | null
   nama_pemesan?: string | null
   email_pemesan?: string | null
-  customers: { nama: string; email: string } | null
+  customers: { nama: string; email: string; no_hp?: string | null } | null
   merchandise: { nama_merch: string; harga: number } | null
 }
 
@@ -57,12 +57,16 @@ type Row = {
   kode: string
   nama: string
   email: string
+  noHp: string
   item: string
   total: number
   metode: string
+  voucher: string | null
   status: 'berhasil' | 'pending' | 'gagal'
+  statusLain: string | null
   sumber?: 'online' | 'offline'
   waktu: string
+  tanggalRaw: string
 }
 
 type SortKey = 'kode' | 'tipe' | 'nama' | 'total' | 'metode' | 'status' | 'waktu'
@@ -76,7 +80,23 @@ const STATUS_CONFIG = {
 function formatRupiah(n: number) { return 'Rp ' + n.toLocaleString('id-ID') }
 function formatWaktu(iso: string) {
   try {
-    return new Date(iso).toLocaleString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })
+    // Tanggal disimpan sebagai WIB (tanpa offset). Jika string sudah punya
+    // offset/Z, pakai asli. Jika tidak, tambahkan +07:00 agar JS tidak
+    // mencoba mengonversi dari UTC ke WIB (yang membuat tanggal/jam melenceng).
+    let d: Date
+    if (/[+-]\d{2}:?\d{2}$|Z$/i.test(iso)) {
+      d = new Date(iso)
+    } else {
+      d = new Date(iso.replace(' ', 'T') + '+07:00')
+    }
+    return d.toLocaleString('id-ID', {
+      timeZone: 'Asia/Jakarta',
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
   } catch {
     return iso
   }
@@ -115,7 +135,7 @@ export default function SuperAdminTransactionsPage() {
   const [search, setSearch] = useState('')
   const [filterStatus, setFilterStatus] = useState('all')
   const [sortKey, setSortKey] = useState<SortKey>('waktu')
-  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('desc')
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc')
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
   const [sendingId, setSendingId] = useState('')
@@ -128,15 +148,16 @@ export default function SuperAdminTransactionsPage() {
     label === 'Berhasil' ? t({ ID: 'Berhasil', EN: 'Successful' }) : label === 'Gagal' ? t({ ID: 'Gagal', EN: 'Failed' }) : t({ ID: 'Pending', EN: 'Pending' })
 
   useEffect(() => {
-    if (!getAdminSession()) {
-      router.replace('/admin/login')
+    const session = getAdminSession('superadmin')
+    if (!session || session.role !== 'superadmin') {
+      router.replace('/superadmin/login')
       return
     }
     const ev = eventId ? `event=${encodeURIComponent(eventId)}` : ''
     const q = ev ? `?${ev}` : ''
     Promise.all([
-      fetch(`/api/transactions${q}`).then((r) => r.json()),
-      fetch(`/api/merch/orders${q}`).then((r) => r.json()),
+      adminFetch(`/api/transactions${q}`).then((r) => r.json()),
+      adminFetch(`/api/merch/orders${q}`).then((r) => r.json()),
     ])
       .then(([tiketRes, merchRes]) => {
         if (tiketRes.error) throw new Error(tiketRes.error)
@@ -144,8 +165,6 @@ export default function SuperAdminTransactionsPage() {
           const subtotal = Number(tr.tiket?.harga || 0) * tr.jumlah
           const diskon = Number(tr.voucher?.nominal_diskon || 0)
           const paid = tr.pembayaran?.total_bayar
-          // Nominal yang benar-benar dibayar (termasuk biaya admin) dipakai untuk
-          // transaksi lunas; order manual tanpa baris pembayaran pakai subtotal.
           const total =
             tr.status_bayar === 'berhasil' && paid != null
               ? Number(paid)
@@ -156,12 +175,16 @@ export default function SuperAdminTransactionsPage() {
             kode: tr.booking_id,
             nama: tr.nama_pemesan || tr.customers?.nama || '-',
             email: tr.email_pemesan || tr.customers?.email || '-',
+            noHp: tr.customers?.no_hp || '-',
             item: `${tr.tiket?.kategori || '-'} x${tr.jumlah}`,
             total,
             metode: labelMetode(tr.metode_pembayaran),
+            voucher: tr.voucher?.kode_voucher || null,
             status: tr.status_bayar === 'berhasil' ? 'berhasil' : tr.status_bayar === 'gagal' ? 'gagal' : 'pending',
+            statusLain: tr.status_check_in || null,
             sumber: tr.source === 'offline' ? 'offline' : 'online',
             waktu: formatWaktu(tr.tanggal_pesan),
+            tanggalRaw: tr.tanggal_pesan,
           }
         })
         // Kelompokkan baris merch per kode_pesanan: satu checkout berisi beberapa item.
@@ -186,14 +209,18 @@ export default function SuperAdminTransactionsPage() {
             kode: key,
             nama: first.nama_pemesan || first.customers?.nama || '-',
             email: first.email_pemesan || first.customers?.email || '-',
+            noHp: first.customers?.no_hp || '-',
             item: itemLabel,
             total: group.reduce((sum, m) => sum + Number(m.total_harga || 0), 0),
             metode: labelMetode(metode),
+            voucher: null,
             status: first.status_bayar === 'berhasil' ? 'berhasil' : first.status_bayar === 'gagal' ? 'gagal' : 'pending',
+            statusLain: first.status_pengambilan || null,
             waktu: formatWaktu(earliest),
+            tanggalRaw: earliest,
           }
         })
-        setRows([...tiketRows, ...merchRows].sort((a, b) => (a.waktu < b.waktu ? 1 : -1)))
+        setRows([...tiketRows, ...merchRows].sort((a, b) => (a.tanggalRaw < b.tanggalRaw ? 1 : -1)))
       })
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
@@ -201,7 +228,7 @@ export default function SuperAdminTransactionsPage() {
 
   const filtered = rows.filter((row) => {
     const matchSearch =
-      row.kode.toLowerCase().includes(search.toLowerCase()) || row.nama.toLowerCase().includes(search.toLowerCase())
+      row.kode.toLowerCase().includes(search.toLowerCase()) || row.nama.toLowerCase().includes(search.toLowerCase()) || row.noHp.toLowerCase().includes(search.toLowerCase())
     const matchStatus = filterStatus === 'all' || row.status === filterStatus
     return matchSearch && matchStatus
   })
@@ -212,7 +239,7 @@ export default function SuperAdminTransactionsPage() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'))
     } else {
       setSortKey(k)
-      setSortDir(k === 'total' || k === 'waktu' ? 'desc' : 'asc')
+      setSortDir(k === 'total' ? 'desc' : 'asc')
     }
     setPage(1)
   }
@@ -225,7 +252,7 @@ export default function SuperAdminTransactionsPage() {
     else if (sortKey === 'total') cmp = a.total - b.total
     else if (sortKey === 'metode') cmp = a.metode.localeCompare(b.metode)
     else if (sortKey === 'status') cmp = a.status.localeCompare(b.status)
-    else cmp = a.waktu.localeCompare(b.waktu)
+    else cmp = a.tanggalRaw.localeCompare(b.tanggalRaw)
     return sortDir === 'asc' ? cmp : -cmp
   })
 
@@ -246,7 +273,7 @@ export default function SuperAdminTransactionsPage() {
         row.tipe === 'tiket'
           ? `/api/transactions/${encodeURIComponent(row.kode)}`
           : `/api/merch/orders/${encodeURIComponent(row.kode)}`
-      const res = await fetch(url, { method: 'POST' })
+      const res = await adminFetch(url, { method: 'POST' })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal kirim ulang', EN: 'Failed to resend' }))
       const label = row.tipe === 'tiket' ? t({ ID: 'E-tiket', EN: 'E-ticket' }) : t({ ID: 'Bukti pengambilan', EN: 'Pickup proof' })
@@ -263,18 +290,21 @@ export default function SuperAdminTransactionsPage() {
   // Data ekspor dipakai oleh fitur Export Excel.
   const buildExportData = () => {
     const header = t({
-      ID: 'Kode;Tipe;Nama;Email;Item;Total (Rp);Metode;Status;Sumber;Waktu',
-      EN: 'Code;Type;Name;Email;Item;Total (Rp);Method;Status;Source;Time',
+      ID: 'Kode;Tipe;Nama;Email;No HP;Item;Total (Rp);Voucher;Metode;Status;Cek In/Ambil;Sumber;Waktu',
+      EN: 'Code;Type;Name;Email;Phone;Item;Total (Rp);Voucher;Method;Status;Check-in/Pickup;Source;Time',
     }).split(';')
     const data: (string | number)[][] = rows.map((r) => [
       r.kode,
       r.tipe,
       r.nama,
       r.email,
+      r.noHp,
       r.item,
       r.total,
+      r.voucher || '-',
       r.metode,
       r.status,
+      r.statusLain || '-',
       r.sumber || 'online',
       r.waktu,
     ])
@@ -387,10 +417,13 @@ export default function SuperAdminTransactionsPage() {
                     <SortTh label={t({ ID: 'Tipe', EN: 'Type' })} k="tipe" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <th className="px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-left">{t({ ID: 'Sumber', EN: 'Source' })}</th>
                     <SortTh label={t({ ID: 'Pemesan', EN: 'Booker' })} k="nama" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <th className="px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-left">{t({ ID: 'No HP', EN: 'Phone' })}</th>
                     <th className="px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-left">{t({ ID: 'Item', EN: 'Item' })}</th>
                     <SortTh label={t({ ID: 'Total', EN: 'Total' })} k="total" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <th className="px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-left">{t({ ID: 'Voucher', EN: 'Voucher' })}</th>
                     <SortTh label={t({ ID: 'Metode', EN: 'Method' })} k="metode" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <SortTh label={t({ ID: 'Status', EN: 'Status' })} k="status" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <th className="px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-left">{t({ ID: 'Cek In / Ambil', EN: 'Check-in / Pickup' })}</th>
                     <SortTh label={t({ ID: 'Waktu', EN: 'Time' })} k="waktu" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
                     <th className="px-5 py-3.5 text-xs font-semibold text-slate-500 uppercase tracking-wider text-left">{t({ ID: 'Aksi', EN: 'Actions' })}</th>
                   </tr>
@@ -427,8 +460,10 @@ export default function SuperAdminTransactionsPage() {
                           <p className="text-slate-900 font-semibold text-sm">{row.nama}</p>
                           <p className="text-slate-400 text-xs">{row.email}</p>
                         </td>
+                        <td className="px-5 py-3.5 text-slate-600 text-xs font-mono">{row.noHp}</td>
                         <td className="px-5 py-3.5 text-slate-600 text-xs max-w-[160px]">{row.item}</td>
                         <td className="px-5 py-3.5 text-slate-900 font-semibold">{formatRupiah(row.total)}</td>
+                        <td className="px-5 py-3.5 text-slate-600 text-xs">{row.voucher ? row.voucher : '-'}</td>
                         <td className="px-5 py-3.5">
                           <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-slate-50 text-slate-700 border-slate-200">
                             {row.metode}
@@ -445,6 +480,17 @@ export default function SuperAdminTransactionsPage() {
                           >
                             {statusLabel(s.label)}
                           </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-600 text-xs">
+                          {row.statusLain ? (
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full border bg-slate-50 text-slate-700 border-slate-200">
+                              {row.statusLain === 'sudah_check_in' || row.statusLain === 'sudah_diambil'
+                                ? t({ ID: 'Selesai', EN: 'Done' })
+                                : row.statusLain}
+                            </span>
+                          ) : (
+                            '-'
+                          )}
                         </td>
                         <td className="px-5 py-3.5 text-slate-400 text-xs">{row.waktu}</td>
                         <td className="px-5 py-3.5">

@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay } from '../../../lib/events'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -33,9 +33,19 @@ export async function PATCH(
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const body = await request.json()
     const supabase = getServerSupabase()
+    const { data: existing, error: findError } = await supabase
+      .from('tiket')
+      .select('kuota, sisa_kuota')
+      .eq('id', id)
+      .maybeSingle()
+    if (findError) throw new Error(findError.message)
+    if (!existing) return NextResponse.json({ error: 'Tiket tidak ditemukan' }, { status: 404 })
+
     const allowed = ['kategori', 'harga', 'kuota', 'sisa_kuota', 'periode_penjualan', 'deskripsi', 'status', 'id_event']
     const patch: Record<string, unknown> = {}
     for (const key of allowed) {
@@ -47,8 +57,12 @@ export async function PATCH(
       }
       patch.status = String(patch.status)
     }
+    // Jangan reset sisa_kuota ke kuota saat kuota diedit: itu menghapus
+    // penjualan yang sudah tercatat. Pertahankan selisih (terjual) lama.
     if (patch.sisa_kuota == null && patch.kuota != null) {
-      patch.sisa_kuota = patch.kuota
+      const oldKuota = Number(existing.kuota)
+      const oldSisa = Number(existing.sisa_kuota)
+      patch.sisa_kuota = Math.max(0, oldSisa + (Number(patch.kuota) - oldKuota))
     }
     if (Object.keys(patch).length === 0) {
       return NextResponse.json({ error: 'Tidak ada perubahan yang dikirim' }, { status: 400 })
@@ -70,6 +84,8 @@ export async function DELETE(
   try {
     const auth = requireRole(_request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(_request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const supabase = getServerSupabase()
     const { error } = await supabase.from('tiket').delete().eq('id', id)

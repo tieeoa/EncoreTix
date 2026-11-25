@@ -1,5 +1,6 @@
 'use client'
 
+import { adminFetch } from '@/lib/adminAuth'
 import { useState, useEffect } from 'react'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
@@ -22,7 +23,7 @@ export default function EventSelector() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch('/api/events')
+    adminFetch('/api/events')
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)

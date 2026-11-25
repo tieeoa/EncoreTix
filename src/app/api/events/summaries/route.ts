@@ -15,7 +15,7 @@ export async function GET() {
     const [tiketRes, merchRes] = await Promise.all([
       supabase
         .from('pesanan_tiket')
-        .select('jumlah, status_bayar, tiket(id_event, harga)'),
+        .select('jumlah, status_bayar, tiket(id_event, harga), pembayaran(total_bayar)'),
       supabase
         .from('pesanan_merchandise')
         .select('jumlah, status_bayar, total_harga, merchandise(id_event)'),
@@ -33,6 +33,7 @@ export async function GET() {
         jumlah: number
         status_bayar: string
         tiket: { id_event: string; harga: number } | null
+        pembayaran: { total_bayar: number | null } | null
       }[]
       const merchRows = (merchRes.data ?? []) as unknown as {
         jumlah: number
@@ -45,7 +46,11 @@ export async function GET() {
         if (p.tiket?.id_event === e.id && p.status_bayar === 'berhasil') {
           const qty = Number(p.jumlah || 0)
           tiketTerjual += qty
-          revenueTiket += qty * Number(p.tiket?.harga || 0)
+          // Pakai nominal yang benar-benar dibayar bila ada (termasuk biaya
+          // admin, setelah diskon voucher) agar sama dengan dashboard.
+          revenueTiket += p.pembayaran?.total_bayar != null
+            ? Number(p.pembayaran.total_bayar)
+            : qty * Number(p.tiket?.harga || 0)
         }
       }
       for (const o of merchRows) {

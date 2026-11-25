@@ -47,11 +47,11 @@ interface EventInfo {
 }
 
 const DEFAULT_EVENT: EventInfo = {
-  nama_event: 'CoravFest',
+  nama_event: 'Event EncoreTix',
   tanggal: '-',
   jam: '-',
   lokasi: '-',
-  gambar: '/coravfest.jpg',
+  gambar: '/logo.png',
 }
 
 function formatEventDate(iso: string | null): string {
@@ -86,6 +86,7 @@ export default function MerchDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeEvent, setActiveEvent] = useState<{ id: string; nama_event: string } | null>(null)
+  const [showCodeLockPopup, setShowCodeLockPopup] = useState(false)
 
   useEffect(() => {
     fetch('/api/events?active=true')
@@ -108,14 +109,43 @@ export default function MerchDetailPage() {
   useEffect(() => {
     if (!pickupCode) return
     fetch(`/api/merch/orders/${encodeURIComponent(pickupCode)}`)
-      .then((r) => r.json())
-      .then((res) => {
+      .then(async (r) => {
+        const res = await r.json()
+        if (res.code_locked) {
+          setShowCodeLockPopup(true)
+          return null
+        }
         if (res.error) throw new Error(res.error)
+        return res
+      })
+      .then((res) => {
+        if (!res) return
         setBooking(res.data)
       })
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
   }, [pickupCode])
+
+  if (showCodeLockPopup) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-xl font-bold text-amber-600">
+            !
+          </div>
+          <p className="text-sm font-semibold leading-relaxed text-gray-800">
+            Hai customer! Cek kembali kode tiket anda melalui akun gmail yang digunakan saat pemesanan, Terimakasih.
+          </p>
+          <button
+            onClick={() => router.push('/merch-saya')}
+            className="mt-5 w-full rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-3 text-sm font-semibold text-white cursor-pointer"
+          >
+            Kembali
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (loading) {
     return (

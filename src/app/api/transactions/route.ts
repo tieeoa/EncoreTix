@@ -6,7 +6,7 @@ import { isTicketSalesClosed } from '../../lib/salesClosed'
 import { resolveEventId } from '../../lib/events'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 import { parseJsonArray, resolvePemesan, type PartySnapshot } from '../../lib/orderSnapshot'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -18,10 +18,13 @@ export async function GET(request: Request) {
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const supabase = getServerSupabase()
     await expireExpiredPendingOrders(supabase)
     const { searchParams } = new URL(request.url)
     const source = searchParams.get('source')
+    const panitiaParam = searchParams.get('panitia')
 
     let query = supabase
       .from('pesanan_tiket')
@@ -31,6 +34,14 @@ export async function GET(request: Request) {
 
     if (source === 'online' || source === 'offline') {
       query = query.eq('source', source)
+    }
+    // Transaksi/order manual per akun: admin hanya lihat miliknya; superadmin bisa filter per akun (Pantau) atau lihat semua.
+    if (source === 'offline') {
+      if (auth.session.role === 'admin') {
+        query = query.eq('id_panitia', auth.session.id)
+      } else if (panitiaParam) {
+        query = query.eq('id_panitia', panitiaParam)
+      }
     }
 
     const eventId = await resolveEventId(supabase, searchParams.get('event'))
@@ -81,7 +92,7 @@ export async function GET(request: Request) {
       // Nama/email pemesan memakai snapshot pesanan agar konsisten dengan
       // isian checkout, bukan nama lama pada tabel customers.
       const customers = r.customers
-        ? { ...r.customers, nama: pemesan.nama, email: pemesan.email }
+        ? { ...r.customers, nama: pemesan.nama, email: pemesan.email, no_hp: pemesan.no_hp }
         : r.customers
       return {
         ...r,
@@ -137,9 +148,20 @@ export async function POST(request: Request) {
     const body = (await request.json()) as CreatePesananBody
 
     // Order manual (panitia) hanya boleh dibuat oleh admin/superadmin.
+    let manualActorId: string | null = null
     if (body.manual) {
       const auth = requireRole(request, ['admin', 'superadmin'])
       if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
+      if (auth.session.role === 'admin') {
+        const supabaseCheck = getServerSupabase()
+        const { data: actor } = await supabaseCheck.from('panitia').select('status').eq('id', auth.session.id).maybeSingle()
+        if (!actor || (actor.status ?? 'aktif') === 'nonaktif') {
+          return NextResponse.json({ error: 'Akun admin dinonaktifkan. Hubungi superadmin.' }, { status: 403 })
+        }
+      }
+      manualActorId = auth.session.id
     }
 
     if (!body.nama || !body.email) {
@@ -179,7 +201,13 @@ export async function POST(request: Request) {
     // Pembelian online hanya untuk tiket event yang sedang berlangsung.
     if (!body.manual) {
       const activeEventId = await resolveEventId(supabase, null)
-      if (activeEventId && tiket.id_event && String(tiket.id_event) !== String(activeEventId)) {
+      if (!activeEventId) {
+        return NextResponse.json(
+          { error: 'Belum ada event aktif. Penjualan tiket sedang ditutup.' },
+          { status: 400 }
+        )
+      }
+      if (tiket.id_event && String(tiket.id_event) !== String(activeEventId)) {
         return NextResponse.json(
           { error: 'Tiket ini bukan untuk event yang sedang berlangsung.' },
           { status: 400 }
@@ -314,23 +342,28 @@ export async function POST(request: Request) {
     }))
 
     // 5. Simpan pesanan_tiket
+    const insertPayload: Record<string, unknown> = {
+      booking_id: bookingId,
+      id_customer: pemesanId,
+      nama_pemesan: body.nama,
+      email_pemesan: body.email,
+      pemesan_data: pemesanData,
+      id_tiket: body.id_tiket,
+      id_voucher: idVoucher,
+      jumlah: body.jumlah,
+      pemilik_ids: ownerIds,
+      pemilik_data: pemilikData,
+      source: body.source || 'online',
+      status_bayar: body.manual ? 'berhasil' : 'pending',
+      status_check_in: 'belum_check_in',
+    }
+    if (body.manual && manualActorId) {
+      insertPayload.id_panitia = manualActorId
+    }
+
     const { data: pesanan, error: pesananError } = await supabase
       .from('pesanan_tiket')
-      .insert({
-        booking_id: bookingId,
-        id_customer: pemesanId,
-        nama_pemesan: body.nama,
-        email_pemesan: body.email,
-        pemesan_data: pemesanData,
-        id_tiket: body.id_tiket,
-        id_voucher: idVoucher,
-        jumlah: body.jumlah,
-        pemilik_ids: ownerIds,
-        pemilik_data: pemilikData,
-        source: body.source || 'online',
-        status_bayar: body.manual ? 'berhasil' : 'pending',
-        status_check_in: 'belum_check_in',
-      })
+      .insert(insertPayload)
       .select('*, customers(nama, email), tiket(kategori, harga), voucher(kode_voucher, nominal_diskon)')
       .single()
     if (pesananError) throw new Error(pesananError.message)
@@ -356,6 +389,21 @@ export async function POST(request: Request) {
         .update({ sisa_kuota: tiket.sisa_kuota - body.jumlah })
         .eq('id', body.id_tiket)
       if (stockError) throw new Error(stockError.message)
+      // Simpan nominal yang benar-benar diterima (sudah dipotong voucher)
+      // agar laporan tidak bergantung pada harga tiket saat ini.
+      const { error: payError } = await supabase
+        .from('pembayaran')
+        .upsert(
+          {
+            id_pesanan_tiket: pesanan.id,
+            metode_pembayaran: 'Tunai',
+            tanggal_bayar: new Date().toISOString(),
+            total_bayar: subtotal,
+            status_pembayaran: 'berhasil',
+          },
+          { onConflict: 'id_pesanan_tiket' }
+        )
+      if (payError) throw new Error(payError.message)
       emailSent = await sendTicketEmailForBooking(bookingId)
     }
 

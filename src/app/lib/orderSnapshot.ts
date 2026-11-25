@@ -93,5 +93,13 @@ export function resolvePemesan(
     nama: (row?.nama_pemesan as string | null | undefined) ?? null,
     email: (row?.email_pemesan as string | null | undefined) ?? null,
   }
-  return mergeHolder(snap, fallbackCustomer, legacy)
+  const base = mergeHolder(snap, fallbackCustomer, legacy)
+  // no_hp HANYA dari snapshot pemesan_data (input saat checkout). JANGAN fallback
+  // ke customers.no_hp (live, ditimpa setiap order ulang) karena akan membuat
+  // semua order dengan email sama menampilkan nomor terbaru dan mengubah
+  // riwayat order lama.
+  return {
+    ...base,
+    no_hp: (snap?.no_hp as string | null) ?? null,
+  }
 }

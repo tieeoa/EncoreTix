@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from 'crypto'
 import { NextResponse } from 'next/server'
+import { getServerSupabase } from '@/app/lib/supabaseClient'
 
 export const SESSION_COOKIE = 'encoretix_session'
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000
@@ -52,6 +53,12 @@ export function verifySessionToken(token?: string | null): SessionPayload | null
 }
 
 export function getSessionFromRequest(request: Request): SessionPayload | null {
+  const auth = request.headers.get('authorization') || ''
+  if (auth.toLowerCase().startsWith('bearer ')) {
+    const token = auth.slice(7).trim()
+    const fromHeader = verifySessionToken(token)
+    if (fromHeader) return fromHeader
+  }
   const cookie = request.headers.get('cookie') || ''
   const prefix = `${SESSION_COOKIE}=`
   const raw = cookie
@@ -83,4 +90,25 @@ export function requireRole(
     return { response: NextResponse.json({ error: 'Akses ditolak.' }, { status: 403 }) }
   }
   return { session }
+}
+
+// Blokir seluruh akses API untuk admin yang dinonaktifkan.
+export async function rejectInactiveAdminMutation(
+  _request: Request,
+  session: SessionPayload
+): Promise<NextResponse | null> {
+  if (session.role !== 'admin') return null
+  try {
+    const supabase = getServerSupabase()
+    const { data } = await supabase.from('panitia').select('status').eq('id', session.id).maybeSingle()
+    if (!data || (data.status ?? 'aktif') === 'nonaktif') {
+      return NextResponse.json(
+        { error: 'Akun admin dinonaktifkan. Hubungi superadmin.' },
+        { status: 403 }
+      )
+    }
+  } catch {
+    return NextResponse.json({ error: 'Gagal memverifikasi status akun.' }, { status: 500 })
+  }
+  return null
 }

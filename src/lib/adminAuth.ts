@@ -10,64 +10,45 @@ export interface AdminSession {
   role: string
 }
 
-const ADMIN_STORAGE_KEY = 'encoretix_admin'
-const SUPERADMIN_STORAGE_KEY = 'encoretix_superadmin'
-
-function getStorageKey(role: string): string {
-  return role === 'superadmin' ? SUPERADMIN_STORAGE_KEY : ADMIN_STORAGE_KEY
-}
+// Sesi per-tab (sessionStorage) agar bisa login akun berbeda di tab/profil-browser yang sama.
+const SESSION_KEY = 'encoretix_session'
 
 export function saveAdminSession(session: AdminSession) {
   if (typeof window !== 'undefined') {
-    localStorage.setItem(getStorageKey(session.role), JSON.stringify(session))
+    sessionStorage.setItem(SESSION_KEY, JSON.stringify(session))
   }
 }
 
 export function getAdminSession(role?: string): AdminSession | null {
   if (typeof window === 'undefined') return null
   try {
-    const key = role ? getStorageKey(role) : ADMIN_STORAGE_KEY
-    const raw = localStorage.getItem(key)
-    return raw ? (JSON.parse(raw) as AdminSession) : null
+    const raw = sessionStorage.getItem(SESSION_KEY)
+    if (!raw) return null
+    const session = JSON.parse(raw) as AdminSession
+    if (role && session.role !== role) return null
+    return session
   } catch {
     return null
   }
 }
 
 export function getAnyAdminSession(): AdminSession | null {
-  if (typeof window === 'undefined') return null
-  try {
-    const adminRaw = localStorage.getItem(ADMIN_STORAGE_KEY)
-    if (adminRaw) return JSON.parse(adminRaw) as AdminSession
-    const superAdminRaw = localStorage.getItem(SUPERADMIN_STORAGE_KEY)
-    if (superAdminRaw) return JSON.parse(superAdminRaw) as AdminSession
-    return null
-  } catch {
-    return null
-  }
+  return getAdminSession()
 }
 
-export function clearAdminSession(role?: string) {
+export function clearAdminSession(_role?: string) {
   if (typeof window !== 'undefined') {
-    if (role) {
-      localStorage.removeItem(getStorageKey(role))
-    } else {
-      localStorage.removeItem(ADMIN_STORAGE_KEY)
-      localStorage.removeItem(SUPERADMIN_STORAGE_KEY)
-    }
-    // Hapus juga cookie sesi server agar API admin tidak bisa dipakai lagi.
-    void fetch('/api/auth/logout', { method: 'POST' }).catch(() => {})
+    sessionStorage.removeItem(SESSION_KEY)
   }
 }
 
 const emptySubscribe = () => () => {}
 
-// Baca nama admin dari localStorage dengan aman saat SSR (menghindari hydration error).
-// Render awal (server) selalu kosong, lalu setelah hydrate diisi dari localStorage.
-export function useAdminName(): string {
+// Baca nama admin dari sessionStorage (per-tab) dengan aman saat SSR.
+export function useAdminName(role?: 'admin' | 'superadmin'): string {
   return useSyncExternalStore(
     emptySubscribe,
-    () => getAnyAdminSession()?.nama || '',
+    () => getAdminSession(role)?.nama || '',
     () => '',
   )
 }
@@ -86,4 +67,26 @@ export async function loginAdmin(
   const session: AdminSession = result.data
   saveAdminSession(session)
   return session
+}
+
+// Fetch helper untuk endpoint admin/superadmin (kirim token per-tab via Authorization).
+export async function adminFetch(input: RequestInfo | URL, init: RequestInit = {}): Promise<Response> {
+  const token = typeof window !== 'undefined' ? getAdminSession()?.token : null
+  const headers = new Headers(init.headers || {})
+  if (token) headers.set('Authorization', `Bearer ${token}`)
+  const res = await fetch(input, { ...init, headers })
+  if (typeof window !== 'undefined' && (res.status === 401 || res.status === 403)) {
+    try {
+      const cloned = res.clone()
+      const data = await cloned.json()
+      const msg = typeof data?.error === 'string' ? data.error.toLowerCase() : ''
+      if (msg.includes('dinonaktifkan') || msg.includes('sesi tidak valid')) {
+        const session = getAdminSession()
+        clearAdminSession()
+        if (session?.role === 'admin') window.location.href = '/admin/login'
+        else if (session?.role === 'superadmin') window.location.href = '/superadmin/login'
+      }
+    } catch {}
+  }
+  return res
 }

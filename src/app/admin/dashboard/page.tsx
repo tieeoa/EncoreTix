@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import AdminSidebar from '@/components/layout/AdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useRouter } from 'next/navigation'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
@@ -59,7 +59,7 @@ export default function AdminDashboardPage() {
     }
     ;(async () => {
       try {
-        const evRes = await fetch('/api/events?active=true').then((r) => r.json())
+        const evRes = await adminFetch('/api/events?active=true').then((r) => r.json())
         if (evRes.error) throw new Error(evRes.error)
         const active = evRes.data as { id: string; nama_event: string } | null
         setActiveEvent(active)
@@ -73,10 +73,10 @@ export default function AdminDashboardPage() {
         const q = `event=${encodeURIComponent(active.id)}`
         const [statsRes, statsAllRes, ordersRes] = await Promise.all([
           // Tiket terjual + tabel tetap khusus manual/offline.
-          fetch(`/api/dashboard/stats?${q}&source=offline`).then((r) => r.json()),
+          adminFetch(`/api/dashboard/stats?${q}&source=offline`).then((r) => r.json()),
           // Angka check-in dari SEMUA tiket (online + offline) yang sudah masuk.
-          fetch(`/api/dashboard/stats?${q}`).then((r) => r.json()),
-          fetch(`/api/transactions?${q}&source=offline`).then((r) => r.json()),
+          adminFetch(`/api/dashboard/stats?${q}`).then((r) => r.json()),
+          adminFetch(`/api/transactions?${q}&source=offline`).then((r) => r.json()),
         ])
         if (statsRes.error) throw new Error(statsRes.error)
         if (ordersRes.error) throw new Error(ordersRes.error)

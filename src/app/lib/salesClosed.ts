@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { getEventById } from './events'
+import { getEventById, todayISO } from './events'
 
 // Cek apakah penjualan tiket event tertentu otomatis tertutup.
 // Tertutup bila:
@@ -18,6 +18,6 @@ export async function isTicketSalesClosed(
   const eventDate = event.tanggal
   if (!eventDate) return false
 
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayISO()
   return today >= eventDate
 }

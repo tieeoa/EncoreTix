@@ -115,7 +115,7 @@ export default function TicketListPage() {
           <span className="text-xl shrink-0">🔴</span>
           <div>
             <p className="text-sm font-semibold text-red-700 dark:text-red-300">{t({ ID: 'Penjualan Tiket Ditutup', EN: 'Ticket Sales Closed' })}</p>
-            <p className="text-xs text-red-600/80 dark:text-red-400 mt-0.5">{t({ ID: 'Penjualan tiket online sudah ditutup karena event telah berlangsung. Untuk pemesanan lebih lanjut, hubungi panitia.', EN: "Online ticket sales are closed as the event has started. For further purchases please contact the committee." })}</p>
+            <p className="text-xs text-red-600/80 dark:text-red-400 mt-0.5">{t({ ID: 'Penjualan tiket sedang ditutup karena belum ada event aktif atau event telah berlangsung. Untuk informasi lebih lanjut, hubungi panitia.', EN: "Ticket sales are closed because there is no active event or the event has ended. For further information please contact the committee." })}</p>
           </div>
         </div>
       )}

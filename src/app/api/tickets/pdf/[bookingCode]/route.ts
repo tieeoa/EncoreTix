@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../../lib/supabaseClient'
 import { generateTicketPdf, type TicketPdfData } from '../../../../lib/ticketPdf'
 import { getEventById, formatEventDisplay, getActiveEvent } from '../../../../lib/events'
+import { getClientIp, recordFailedCodeLookup, clearFailedCodeLookups, codeLockResponse } from '../../../../lib/rateLimit'
 import { mergeHolder, parseJsonArray, resolvePemesan, type PartySnapshot } from '../../../../lib/orderSnapshot'
 
 export const dynamic = 'force-dynamic'
@@ -19,6 +20,9 @@ export async function GET(
   _req: Request,
   { params }: { params: Promise<{ bookingCode: string }> }
 ) {
+  const clientIp = getClientIp(_req)
+  const codeKey = `code-lookup:${clientIp}`
+
   try {
     const { bookingCode } = await params
     const rawCode = decodeURIComponent(bookingCode)
@@ -36,8 +40,12 @@ export async function GET(
       .maybeSingle()
 
     if (!pesanan) {
+      const failed = recordFailedCodeLookup(codeKey)
+      if (failed.locked) return codeLockResponse(failed.resetAt)
       return NextResponse.json({ error: 'Tiket tidak ditemukan' }, { status: 404 })
     }
+
+    clearFailedCodeLookups(codeKey)
 
     // E-tiket hanya boleh diunduh setelah pembayaran benar-benar lunas.
     if (pesanan.status_bayar !== 'berhasil') {

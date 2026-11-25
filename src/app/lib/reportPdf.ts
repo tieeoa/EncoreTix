@@ -185,6 +185,45 @@ export async function generateReportPdf(data: ReportPdfData): Promise<Buffer> {
     y -= 12
   }
 
+  // --- Order Manual per Admin ---
+  const manualByAdmin = stats.manualByAdmin || []
+  if (manualByAdmin.length > 0) {
+    if (y - 90 < 60) openPage()
+    drawShrinkText(page, fontBold, 'Order Manual per Admin', MARGIN, y, 12, 400, NAVY)
+    y -= 16
+    drawShrinkText(page, font, 'Kontribusi order offline (source manual) per akun panitia', MARGIN, y, 9, 400, GRAY)
+    y -= 14
+
+    const adminCols: TableCol[] = [
+      { x: 40, w: 180, align: 'left', label: 'Admin' },
+      { x: 220, w: 80, align: 'right', label: 'Order' },
+      { x: 300, w: 80, align: 'right', label: 'Tiket Lunas' },
+      { x: 380, w: 175, align: 'right', label: 'Revenue' },
+    ]
+    page.drawRectangle({ x: MARGIN - 10, y: y, width: W - 60, height: 22, color: LIGHT })
+    for (const c of adminCols) {
+      if (c.align === 'right') drawTextRight(page, fontBold, c.label, c.x + c.w, y + 7, 9, NAVY)
+      else drawShrinkText(page, fontBold, c.label, c.x, y + 7, 9, c.w, NAVY)
+    }
+    y -= 22
+    for (const r of manualByAdmin) {
+      if (y - 26 < 60) openPage()
+      page.drawRectangle({ x: MARGIN - 10, y: y - 20, width: W - 60, height: 20, color: y % 2 === 0 ? LIGHT : rgb(1, 1, 1) })
+      drawShrinkText(page, font, r.nama || '-', 40, y - 8, 10, 175, DARK)
+      drawTextRight(page, font, String(r.orders), 300, y - 8, 10)
+      drawTextRight(page, font, r.tiket.toLocaleString('id-ID'), 380, y - 8, 10, rgb(0.1, 0.6, 0.35))
+      drawTextRight(page, fontBold, formatRupiah(r.revenue), 555, y - 8, 10)
+      y -= 24
+    }
+    if (y - 26 < 60) openPage()
+    page.drawRectangle({ x: MARGIN - 10, y: y - 20, width: W - 60, height: 20, color: LIGHT })
+    drawShrinkText(page, fontBold, 'TOTAL', 40, y - 8, 10, 175, NAVY)
+    drawTextRight(page, fontBold, String(manualByAdmin.reduce((s, r) => s + r.orders, 0)), 300, y - 8, 10)
+    drawTextRight(page, fontBold, manualByAdmin.reduce((s, r) => s + r.tiket, 0).toLocaleString('id-ID'), 380, y - 8, 10, rgb(0.1, 0.6, 0.35))
+    drawTextRight(page, fontBold, formatRupiah(manualByAdmin.reduce((s, r) => s + r.revenue, 0)), 555, y - 8, 10)
+    y -= 40
+  }
+
   // --- Tabel Tiket ---
   const tiketCols: TableCol[] = [
     { x: 40, w: 100, align: 'left', label: 'Kategori' },

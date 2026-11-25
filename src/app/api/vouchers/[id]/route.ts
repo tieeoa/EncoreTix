@@ -1,6 +1,6 @@
-import { NextResponse } from 'next/server'
+﻿import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
-import { requireRole } from '@/lib/serverAuth'
+import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
@@ -13,56 +13,64 @@ export async function PATCH(
   try {
     const auth = requireRole(request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const body = await request.json()
     const supabase = getServerSupabase()
 
+    const { data: existing, error: findError } = await supabase
+      .from('voucher')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle()
+    if (findError) throw new Error(findError.message)
+    if (!existing) {
+      return NextResponse.json({ error: 'Voucher tidak ditemukan' }, { status: 404 })
+    }
+
     const patch: Record<string, unknown> = {}
+
+    // Izinkan edit KODE voucher (dengan validasi unik).
+    if (body.kode_voucher !== undefined) {
+      const kode = String(body.kode_voucher).trim().toUpperCase()
+      if (!kode) {
+        return NextResponse.json({ error: 'Kode voucher tidak boleh kosong' }, { status: 400 })
+      }
+      if (kode !== existing.kode_voucher) {
+        const { data: dupe } = await supabase
+          .from('voucher')
+          .select('id')
+          .eq('kode_voucher', kode)
+          .neq('id', id)
+          .maybeSingle()
+        if (dupe) {
+          return NextResponse.json({ error: 'Kode voucher sudah digunakan' }, { status: 409 })
+        }
+        patch.kode_voucher = kode
+      }
+    }
 
     if (body.nominal_diskon !== undefined) {
       const nominal = Number(body.nominal_diskon)
-      if (!Number.isFinite(nominal) || nominal < 0) {
-        return NextResponse.json({ error: 'Nominal diskon harus angka positif' }, { status: 400 })
-      }
+      if (nominal <= 0) return NextResponse.json({ error: 'Nominal diskon harus lebih dari 0' }, { status: 400 })
       patch.nominal_diskon = nominal
     }
 
     if (body.kuota_penggunaan !== undefined) {
       const kuota = Number(body.kuota_penggunaan)
-      if (!Number.isInteger(kuota) || kuota < 1) {
-        return NextResponse.json({ error: 'Kuota penggunaan minimal 1' }, { status: 400 })
-      }
-      const { data: current } = await supabase
-        .from('voucher')
-        .select('jumlah_digunakan')
-        .eq('id', id)
-        .maybeSingle()
-      if (current && Number(current.jumlah_digunakan) > kuota) {
-        return NextResponse.json(
-          { error: 'Kuota tidak boleh kurang dari jumlah voucher yang sudah terpakai' },
-          { status: 400 }
-        )
+      if (kuota < 1) return NextResponse.json({ error: 'Kuota minimal 1' }, { status: 400 })
+      if (kuota < Number(existing.jumlah_digunakan)) {
+        return NextResponse.json({ error: 'Kuota tidak boleh lebih kecil dari jumlah yang sudah digunakan' }, { status: 400 })
       }
       patch.kuota_penggunaan = kuota
     }
 
     if (body.status !== undefined) {
       if (!['aktif', 'nonaktif'].includes(body.status)) {
-        return NextResponse.json({ error: 'Status tidak valid' }, { status: 400 })
+        return NextResponse.json({ error: 'Status harus aktif atau nonaktif' }, { status: 400 })
       }
       patch.status = body.status
-    }
-
-    if (body.id_event !== undefined) {
-      const idEvent = String(body.id_event || '').trim()
-      if (!idEvent) {
-        return NextResponse.json({ error: 'id_event tidak boleh kosong' }, { status: 400 })
-      }
-      const { data: eventExists } = await supabase.from('event_info').select('id').eq('id', idEvent).maybeSingle()
-      if (!eventExists) {
-        return NextResponse.json({ error: 'Event tidak ditemukan' }, { status: 400 })
-      }
-      patch.id_event = idEvent
     }
 
     if (Object.keys(patch).length === 0) {
@@ -92,6 +100,8 @@ export async function DELETE(
   try {
     const auth = requireRole(_request, ['admin', 'superadmin'])
     if ('response' in auth) return auth.response
+    const ro = await rejectInactiveAdminMutation(_request, auth.session)
+    if (ro) return ro
     const { id } = await params
     const supabase = getServerSupabase()
     const { error } = await supabase.from('voucher').delete().eq('id', id)

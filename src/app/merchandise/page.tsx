@@ -117,7 +117,8 @@ function MerchandisePageContent() {
   const [products, setProducts] = useState<MerchItem[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [bands, setBands] = useState<Band[]>([])
-  const [eventName, setEventName] = useState('CoravFest')
+  const [eventName, setEventName] = useState('')
+  const [noActiveEvent, setNoActiveEvent] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeCategory, setActiveCategory] = useState('Semua')
@@ -136,6 +137,7 @@ function MerchandisePageContent() {
         setCategories(catRes.data || [])
         setBands((bandRes.data || []) as Band[])
         if (eventRes?.data?.nama_event) setEventName(eventRes.data.nama_event)
+        setNoActiveEvent(!eventRes?.data?.id)
       })
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
@@ -207,7 +209,9 @@ function MerchandisePageContent() {
       <div className="relative rounded-2xl overflow-hidden min-h-40 bg-gradient-to-r from-indigo-950 via-slate-900 to-zinc-900 mb-8 flex items-center px-4 sm:px-8 py-6">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_70%_50%,rgba(99,102,241,0.2),transparent_60%)]" />
         <div>
-          <p className="text-indigo-300 text-xs font-semibold tracking-widest uppercase mb-1">{eventName}</p>
+          <p className="text-indigo-300 text-xs font-semibold tracking-widest uppercase mb-1">
+            {eventName || t({ ID: 'Event Segera Diumumkan', EN: 'Upcoming Event Announcement' })}
+          </p>
           <p className="text-xl sm:text-2xl font-bold text-white">{t({ ID: 'Official Merchandise Store', EN: 'Official Merchandise Store' })}</p>
           <p className="text-sm text-gray-400 mt-1">{t({ ID: 'Pengambilan merch dilakukan mulai dari jam pemesanan hingga maksimal 1 hari setelahnya', EN: 'Merchandise pickup is available from order time up to at most 1 day after' })}</p>
         </div>
@@ -239,8 +243,12 @@ function MerchandisePageContent() {
 
           {sections.length === 0 ? (
             <div className="text-center py-20 text-gray-400">
-              <div className="text-4xl mb-3">🔍</div>
-              <p className="text-sm">{t({ ID: 'Produk tidak ditemukan', EN: 'Product not found' })}</p>
+              <div className="text-4xl mb-3">{noActiveEvent ? '📭' : '🔍'}</div>
+              <p className="text-sm">
+                {noActiveEvent
+                  ? t({ ID: 'Belum ada event aktif. Penjualan merchandise sedang ditutup.', EN: 'No active event. Merchandise sales are currently closed.' })
+                  : t({ ID: 'Produk tidak ditemukan', EN: 'Product not found' })}
+              </p>
             </div>
           ) : (
             <div className="space-y-10">

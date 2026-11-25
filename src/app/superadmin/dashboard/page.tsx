@@ -6,7 +6,7 @@ import Link from 'next/link'
 import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import EventSelector from '@/components/EventSelector'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
@@ -55,7 +55,7 @@ export default function SuperAdminDashboardPage() {
     }
     const ev = eventId ? `event=${encodeURIComponent(eventId)}` : ''
     const q = ev ? `?${ev}` : ''
-    fetch(`/api/dashboard/stats${q}`)
+    adminFetch(`/api/dashboard/stats${q}`)
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -63,7 +63,7 @@ export default function SuperAdminDashboardPage() {
       })
       .catch((e) => setError(friendlyError(e)))
 
-    fetch('/api/events/summaries')
+    adminFetch('/api/events/summaries')
       .then((r) => r.json())
       .then((res) => {
         if (res.error) return

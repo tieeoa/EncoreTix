@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
-import { clearAdminSession } from '@/lib/adminAuth'
+import { clearAdminSession, adminFetch } from '@/lib/adminAuth'
 import { useLang } from '@/lib/i18n'
 import { useSelectedEventId, selectEventId } from '@/lib/eventStore'
 
@@ -78,6 +78,15 @@ const MENU_ITEMS: MenuItem[] = [
     ),
   },
   {
+    label: 'Kelola Admin',
+    href: '/superadmin/admins',
+    icon: (active) => (
+      <svg className={`w-5 h-5 ${active ? 'text-white' : 'text-[#8e9eb5]'}`} fill="none" stroke="currentColor" strokeWidth={1.8} viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" d="M17 20h5v-2a4 4 0 00-4-4h-1m-4 6H3v-2a4 4 0 014-4h6a4 4 0 014 4v2zM12 11a4 4 0 100-8 4 4 0 000 8zm6 1a3 3 0 100-6 3 3 0 000 6z" />
+      </svg>
+    ),
+  },
+  {
     label: 'Laporan',
     href: '/superadmin/reports',
     icon: (active) => (
@@ -126,7 +135,7 @@ export default function SuperAdminSidebar() {
   }, [mobileOpen])
 
   useEffect(() => {
-    fetch('/api/events/summaries')
+    adminFetch('/api/events/summaries')
       .then((r) => r.json())
       .then((res) => {
         if (!res.error) setEvents(res.data || [])
@@ -149,7 +158,9 @@ export default function SuperAdminSidebar() {
             ? t({ ID: 'Kelola Merchandise', EN: 'Manage Merchandise' })
             : label === 'Transaksi'
               ? t({ ID: 'Transaksi', EN: 'Transactions' })
-              : t({ ID: 'Laporan', EN: 'Reports' })
+              : label === 'Kelola Admin'
+                ? t({ ID: 'Kelola Admin', EN: 'Manage Admins' })
+                : t({ ID: 'Laporan', EN: 'Reports' })
 
   const handleLogout = () => {
     clearAdminSession('superadmin')

@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     const supabase = getServerSupabase()
     const { searchParams } = new URL(request.url)
     const eventId = await resolveEventId(supabase, searchParams.get('event'))
+    if (!eventId) return NextResponse.json({ data: [] })
 
     let query = supabase
       .from('merchandise')

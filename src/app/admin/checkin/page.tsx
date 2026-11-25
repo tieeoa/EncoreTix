@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import AdminSidebar from '@/components/layout/AdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useLang } from '@/lib/i18n'
 import { extractScanCode } from '@/app/lib/scanCode'
 import { friendlyError } from '@/app/lib/fetchError'
@@ -107,12 +107,13 @@ export default function AdminCheckinPage() {
   const [scannedIndex, setScannedIndex] = useState<number | null>(null)
   // Event yang sedang berjalan — hasil scan divalidasi milik event ini.
   const [activeEvent, setActiveEvent] = useState<{ id: string; nama_event: string } | null>(null)
+  const [eventChecked, setEventChecked] = useState(false)
 
   const loadData = () => {
     Promise.all([
-      fetch('/api/dashboard/stats').then((r) => r.json()).catch(() => ({})),
+      adminFetch('/api/dashboard/stats').then((r) => r.json()).catch(() => ({})),
       // Ambil SEMUA sumber (online + offline): siapa saja yang sudah masuk harus tampil.
-      fetch('/api/transactions').then((r) => r.json()).catch(() => ({})),
+      adminFetch('/api/transactions').then((r) => r.json()).catch(() => ({})),
     ]).then(([statsRes, ordersRes]) => {
       setCheckinCount(statsRes.data?.checkin ?? 0)
       setTotalTickets(statsRes.data?.tiketTerjual ?? 0)
@@ -147,12 +148,13 @@ export default function AdminCheckinPage() {
       return
     }
     loadData()
-    fetch('/api/events?active=true')
+    adminFetch('/api/events?active=true')
       .then((r) => r.json())
       .then((res) => {
         if (res.data?.id) setActiveEvent({ id: res.data.id, nama_event: res.data.nama_event || '' })
+        setEventChecked(true)
       })
-      .catch(() => {})
+      .catch(() => setEventChecked(true))
   }, [router])
 
   // Kirim check-in ke server. opts.index = 1 tiket, opts.all = semua tiket.
@@ -164,7 +166,7 @@ export default function AdminCheckinPage() {
     if (opts.all) payload.all = true
     if (opts.index != null) payload.ticketIndex = opts.index
 
-    const res = await fetch(`/api/transactions/${encodeURIComponent(bookingId)}`, {
+    const res = await adminFetch(`/api/transactions/${encodeURIComponent(bookingId)}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -210,7 +212,7 @@ export default function AdminCheckinPage() {
     setNotice('')
     setError('')
     try {
-      const verifyRes = await fetch(`/api/transactions/${encodeURIComponent(trimmed)}`)
+      const verifyRes = await adminFetch(`/api/transactions/${encodeURIComponent(trimmed)}`)
       const verify = await verifyRes.json()
       if (!verifyRes.ok || !verify.data) {
         setStatus('invalid')
@@ -226,7 +228,7 @@ export default function AdminCheckinPage() {
       }
 
       // Validasi per-event: tiket harus milik event yang sedang berjalan.
-      if (activeEvent && data.tiket?.id_event && data.tiket.id_event !== activeEvent.id) {
+      if (activeEvent && String(data.tiket?.id_event ?? '') !== String(activeEvent.id)) {
         setStatus('wrong-event')
         return
       }
@@ -345,6 +347,11 @@ export default function AdminCheckinPage() {
             {activeEvent && (
               <p className="text-xs font-semibold text-blue-700 bg-blue-50 border border-blue-200 rounded-xl px-4 py-2 mt-3 inline-block">
                 {t({ ID: 'Check-in untuk:', EN: 'Checking in for:' })} {activeEvent.nama_event}
+              </p>
+            )}
+            {eventChecked && !activeEvent && (
+              <p className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2 mt-3 inline-block">
+                {t({ ID: 'Belum ada event aktif. Check-in sedang dinonaktifkan.', EN: 'No active event. Check-in is disabled.' })}
               </p>
             )}
             {error && <Toast ok={false} text={error} onClose={() => setError('')} className="mt-3" />}

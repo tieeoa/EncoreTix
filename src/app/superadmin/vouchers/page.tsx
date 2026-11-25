@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import EventSelector from '@/components/EventSelector'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useLang } from '@/lib/i18n'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useSelectedEventStatus } from '@/lib/useEventStatus'
@@ -67,7 +67,7 @@ export default function SuperAdminVouchersPage() {
 
   const load = () => {
     const q = effectiveEventId ? `?event=${encodeURIComponent(effectiveEventId)}` : ''
-    fetch(`/api/vouchers${q}`)
+    adminFetch(`/api/vouchers${q}`)
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -103,7 +103,7 @@ export default function SuperAdminVouchersPage() {
     }
     setBusy(true)
     try {
-      const res = await fetch('/api/vouchers', {
+      const res = await adminFetch('/api/vouchers', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ kode_voucher: kode, nominal_diskon: nominal, kuota_penggunaan: kuota, id_event: effectiveEventId }),
@@ -125,7 +125,7 @@ export default function SuperAdminVouchersPage() {
     const next = v.status === 'aktif' ? 'nonaktif' : 'aktif'
     setBusy(true)
     try {
-      const res = await fetch(`/api/vouchers/${v.id}`, {
+      const res = await adminFetch(`/api/vouchers/${v.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: next }),
@@ -155,7 +155,7 @@ export default function SuperAdminVouchersPage() {
     }
     setBusy(true)
     try {
-      const res = await fetch(`/api/vouchers/${v.id}`, {
+      const res = await adminFetch(`/api/vouchers/${v.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nominal_diskon: nominal, kuota_penggunaan: kuota }),
@@ -177,7 +177,7 @@ export default function SuperAdminVouchersPage() {
     if (!confirm(`${t({ ID: 'Hapus voucher', EN: 'Delete voucher' })} ${v.kode_voucher}?`)) return
     setBusy(true)
     try {
-      const res = await fetch(`/api/vouchers/${v.id}`, { method: 'DELETE' })
+      const res = await adminFetch(`/api/vouchers/${v.id}`, { method: 'DELETE' })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal menghapus', EN: 'Failed to delete' }))
       notify(true, `${v.kode_voucher} ${t({ ID: 'dihapus.', EN: 'deleted.' })}`)

@@ -80,7 +80,7 @@ function CategoryIcon({ type }: { type: string }) {
   )
 }
 
-function PaymentContent() {
+function PaymentContent({ adminMode = false }: { adminMode?: boolean } = {}) {
   const router = useRouter()
   const { t } = useLang()
   const searchParams = useSearchParams()
@@ -88,7 +88,7 @@ function PaymentContent() {
 
   // Pilihan metode pembayaran (default: QRIS)
   const [selectedMethod, setSelectedMethod] = useState<string>('qris')
-  const [step, setStep] = useState<1 | 2>(1) // 1 = review data, 2 = pilih metode
+  const [step, setStep] = useState<1 | 2>(adminMode ? 2 : 1) // 1 = review data, 2 = pilih metode
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({
     ewallet: true,
     va: true,
@@ -130,7 +130,7 @@ function PaymentContent() {
       .finally(() => setLoading(false))
   }, [booking])
 
-  const expired = isExpired || orderExpired
+  const expired = adminMode ? false : (isExpired || orderExpired)
 
   // Perhitungan rincian biaya
   const hargaTiket = pesanan?.tiket ? Number(pesanan.tiket.harga) : 0
@@ -168,6 +168,7 @@ function PaymentContent() {
           body: JSON.stringify({
             booking_id: booking,
             payment_method: selectedMethod,
+            admin_mode: adminMode,
           }),
         })
         const data = await res.json()
@@ -178,10 +179,10 @@ function PaymentContent() {
         if (window.snap && data.token) {
           window.snap.pay(data.token, {
             onSuccess: () => {
-              router.push(`/tiket-saya/${encodeURIComponent(booking)}`)
+              router.push(adminMode ? '/admin/manual-order' : `/tiket-saya/${encodeURIComponent(booking)}`)
             },
             onPending: () => {
-              router.push(`/tiket-saya/${encodeURIComponent(booking)}`)
+              router.push(adminMode ? '/admin/manual-order' : `/tiket-saya/${encodeURIComponent(booking)}`)
             },
             onError: () => {
               setIsPaying(false)
@@ -205,6 +206,7 @@ function PaymentContent() {
         body: JSON.stringify({
           booking_id: booking,
           payment_method: selectedMethod,
+          admin_mode: adminMode,
         }),
       })
       const data = await res.json()
@@ -248,15 +250,25 @@ function PaymentContent() {
     : pesanan.customers ? [pesanan.customers] : []
 
   return (
-    <div className="min-h-screen bg-[#f9fafc] pb-24">
+    <div className={`${adminMode ? 'bg-transparent pb-24' : 'min-h-screen bg-[#f9fafc] pb-24'}`}>
       {/* Timer Banner */}
-      <div suppressHydrationWarning className="sticky top-16 z-40 w-full bg-[#ccff00] py-2.5 text-center text-[13px] font-medium text-black">
-        <span suppressHydrationWarning>{mounted ? formatRemaining(remaining) : '10:00'}</span> | {t({ ID: 'Sisa waktu untuk memesan tiket', EN: 'Time left to book your ticket' })}
-      </div>
+      {!adminMode && (
+        <div suppressHydrationWarning className="sticky top-16 z-40 w-full bg-[#ccff00] py-2.5 text-center text-[13px] font-medium text-black">
+          <span suppressHydrationWarning>{mounted ? formatRemaining(remaining) : '10:00'}</span> | {t({ ID: 'Sisa waktu untuk memesan tiket', EN: 'Time left to book your ticket' })}
+        </div>
+      )}
 
       <div className="max-w-6xl mx-auto px-4 pt-6">
         {/* Tombol Kembali */}
-        {step === 2 && !directPaymentData ? (
+        {adminMode ? (
+          <button
+            onClick={() => router.push('/admin/manual-order')}
+            className="flex items-center text-sm text-gray-700 hover:text-gray-900 mb-6 font-medium cursor-pointer"
+          >
+            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            {t({ ID: 'Kembali ke Manual Order', EN: 'Back to Manual Order' })}
+          </button>
+        ) : step === 2 && !directPaymentData ? (
           <button 
             onClick={() => setStep(1)}
             className="flex items-center text-sm text-gray-700 hover:text-gray-900 mb-6 font-medium cursor-pointer"
@@ -282,7 +294,7 @@ function PaymentContent() {
               <DirectPaymentView
                 data={directPaymentData}
                 bookingCode={booking}
-                onSuccess={() => router.push(`/tiket-saya/${encodeURIComponent(booking)}`)}
+                onSuccess={() => router.push(adminMode ? '/admin/manual-order' : `/tiket-saya/${encodeURIComponent(booking)}`)}
                 onChangeMethod={() => setDirectPaymentData(null)}
               />
             ) : step === 1 ? (
@@ -388,13 +400,15 @@ function PaymentContent() {
                       {t({ ID: 'Pilih salah satu metode pembayaran yang tersedia di bawah ini.', EN: 'Select one of the available payment methods below.' })}
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setStep(1)}
-                    className="text-xs font-medium text-indigo-600 hover:text-indigo-700 underline underline-offset-2 transition"
-                  >
-                    {t({ ID: 'Periksa Data', EN: 'Check Details' })}
-                  </button>
+                  {!adminMode && (
+                    <button
+                      type="button"
+                      onClick={() => setStep(1)}
+                      className="text-xs font-medium text-indigo-600 hover:text-indigo-700 underline underline-offset-2 transition"
+                    >
+                      {t({ ID: 'Periksa Data', EN: 'Check Details' })}
+                    </button>
+                  )}
                 </div>
 
                 {/* Alert Khusus Jika Nominal Kecil (< Rp 10.000) */}
@@ -528,31 +542,40 @@ function PaymentContent() {
             <div className="border border-gray-200 bg-white rounded-2xl p-5 lg:sticky lg:top-20 shadow-sm space-y-4">
               <h3 className="font-bold text-gray-900 text-base">{t({ ID: 'Ringkasan Pesanan', EN: 'Order Summary' })}</h3>
               
-              {/* Event Info */}
-              <div className="flex gap-3 pb-4 border-b border-gray-100">
-                <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-950 to-black shrink-0 relative overflow-hidden">
-                  {pesanan.event?.gambar ? (
-                    <Image
-                      src={pesanan.event.gambar}
-                      alt={pesanan.event.nama_event}
-                      fill
-                      className="object-cover"
-                      sizes="56px"
-                    />
-                  ) : null}
+              {!adminMode && (
+                <div className="flex gap-3 pb-4 border-b border-gray-100">
+                  <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-950 to-black shrink-0 relative overflow-hidden">
+                    {pesanan.event?.gambar ? (
+                      <Image
+                        src={pesanan.event.gambar}
+                        alt={pesanan.event.nama_event}
+                        fill
+                        className="object-cover"
+                        sizes="56px"
+                      />
+                    ) : null}
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900 line-clamp-1">{pesanan.event?.nama_event || '-'}</p>
+                    <p className="text-xs text-gray-400 mt-0.5">{pesanan.event?.tanggal || '-'}</p>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-gray-900 line-clamp-1">{pesanan.event?.nama_event || '-'}</p>
-                  <p className="text-xs text-gray-400 mt-0.5">{pesanan.event?.tanggal || '-'}</p>
-                </div>
-              </div>
+              )}
 
               {/* Rincian Harga */}
               <div className="space-y-2 text-sm pb-4 border-b border-gray-100">
-                <div className="flex justify-between text-gray-500">
-                  <span>{pesanan.tiket?.kategori} × {pesanan.jumlah}</span>
-                  <span className="font-medium text-gray-900">{formatRupiah(subtotal)}</span>
-                </div>
+                {!adminMode && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>{pesanan.tiket?.kategori} × {pesanan.jumlah}</span>
+                    <span className="font-medium text-gray-900">{formatRupiah(subtotal)}</span>
+                  </div>
+                )}
+                {adminMode && (
+                  <div className="flex justify-between text-gray-500">
+                    <span>{t({ ID: 'Kode Booking', EN: 'Booking Code' })}</span>
+                    <span className="font-medium text-gray-900 font-mono">{pesanan.booking_id}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-500">
                   <span>{t({ ID: 'Biaya Layanan (4%)', EN: 'Service Fee (4%)' })}</span>
                   <span className="font-medium text-gray-900">{formatRupiah(adminFee)}</span>
@@ -569,7 +592,7 @@ function PaymentContent() {
               <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 text-xs flex items-center justify-between">
                 <span className="text-gray-500">{t({ ID: 'Metode Bayar', EN: 'Method' })}</span>
                 <span className="font-bold text-blue-700 truncate max-w-[160px]">
-                  {step === 1 ? t({ ID: 'Pilih di langkah 2', EN: 'Select in step 2' }) : (selectedMethodObj?.name || 'QRIS')}
+                  {adminMode || step === 2 ? (selectedMethodObj?.name || 'QRIS') : t({ ID: 'Pilih di langkah 2', EN: 'Select in step 2' })}
                 </span>
               </div>
 
@@ -690,10 +713,21 @@ function PaymentContent() {
         tone="warning"
         title={t({ ID: 'Waktu Habis', EN: 'Time Expired' })}
         message={t({ ID: 'Waktu 10 menit untuk pembayaran kamu telah habis. Silakan mulai pemesanan ulang.', EN: 'Your 10-minute payment window has expired. Please start a new booking.' })}
-        actionLabel={t({ ID: 'Ulangi Pesanan', EN: 'Repeat Order' })}
-        onAction={() => router.push('/tiket')}
+        actionLabel={t({ ID: adminMode ? 'Kembali' : 'Ulangi Pesanan', EN: adminMode ? 'Back' : 'Repeat Order' })}
+        onAction={() => router.push(adminMode ? '/admin/manual-order' : '/tiket')}
       />
     </div>
+  )
+}
+
+export { PaymentContent }
+
+export function AdminPaymentPage() {
+  const { t } = useLang()
+  return (
+    <Suspense fallback={<LoadingSpinner label={t({ ID: 'Memuat...', EN: 'Loading...' })} />}>
+      <PaymentContent adminMode />
+    </Suspense>
   )
 }
 

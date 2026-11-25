@@ -6,7 +6,7 @@ import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import Pagination from '@/components/Pagination'
 import EventSelector from '@/components/EventSelector'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useSelectedEventStatus } from '@/lib/useEventStatus'
 import { useLang } from '@/lib/i18n'
@@ -114,10 +114,10 @@ export default function SuperAdminMerchandisePage() {
     const ev = eventId ? `event=${encodeURIComponent(eventId)}` : ''
     const q = ev ? `?${ev}` : ''
     Promise.all([
-      fetch(`/api/merchandise${q}`).then((r) => r.json()),
-      fetch(`/api/bands${q}`).then((r) => r.json()),
-      fetch(`/api/merch/orders${q}`).then((r) => r.json()),
-      fetch(`/api/kategori${q}`).then((r) => r.json()),
+      adminFetch(`/api/merchandise${q}`).then((r) => r.json()),
+      adminFetch(`/api/bands${q}`).then((r) => r.json()),
+      adminFetch(`/api/merch/orders${q}`).then((r) => r.json()),
+      adminFetch(`/api/kategori${q}`).then((r) => r.json()),
     ])
       .then(([merchRes, bandRes, orderRes, catRes]) => {
         if (merchRes.error) throw new Error(merchRes.error)
@@ -132,8 +132,9 @@ export default function SuperAdminMerchandisePage() {
   }
 
   useEffect(() => {
-    if (!getAdminSession()) {
-      router.replace('/admin/login')
+    const session = getAdminSession('superadmin')
+    if (!session || session.role !== 'superadmin') {
+      router.replace('/superadmin/login')
       return
     }
     load()
@@ -169,7 +170,7 @@ export default function SuperAdminMerchandisePage() {
     setSalesBusy(true)
     setError('')
     try {
-      const res = await fetch('/api/merch/sales-status', {
+      const res = await adminFetch('/api/merch/sales-status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ closed: closing, event: eventId || null }),
@@ -298,7 +299,7 @@ export default function SuperAdminMerchandisePage() {
         for (const file of newFiles) {
           const fd = new FormData()
           fd.append('file', file)
-          const res = await fetch('/api/uploads', { method: 'POST', body: fd })
+          const res = await adminFetch('/api/uploads', { method: 'POST', body: fd })
           const result = await res.json()
           if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal upload foto', EN: 'Failed to upload photo' }))
           urls.push(result.url as string)
@@ -343,7 +344,7 @@ export default function SuperAdminMerchandisePage() {
         event: editing ? undefined : eventId || null,
       }
       if (editing) {
-        const res = await fetch(`/api/merchandise/${editing}`, {
+        const res = await adminFetch(`/api/merchandise/${editing}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -351,7 +352,7 @@ export default function SuperAdminMerchandisePage() {
         const result = await res.json()
         if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal menyimpan produk', EN: 'Failed to save product' }))
       } else {
-        const res = await fetch('/api/merchandise', {
+        const res = await adminFetch('/api/merchandise', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -376,7 +377,7 @@ export default function SuperAdminMerchandisePage() {
     if (!confirm(`${t({ ID: 'Hapus produk', EN: 'Delete product' })} "${p.nama_merch}"?`)) return
     setError('')
     try {
-      const res = await fetch(`/api/merchandise/${p.id}`, { method: 'DELETE' })
+      const res = await adminFetch(`/api/merchandise/${p.id}`, { method: 'DELETE' })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal menghapus produk', EN: 'Failed to delete product' }))
       load()
@@ -393,7 +394,7 @@ export default function SuperAdminMerchandisePage() {
     const patch: Record<string, unknown> = {}
     patch[field] = Number(value)
     try {
-      const res = await fetch(`/api/merchandise/${p.id}`, {
+      const res = await adminFetch(`/api/merchandise/${p.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(patch),

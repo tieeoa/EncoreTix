@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import SuperAdminSidebar from '@/components/layout/SuperAdminSidebar'
 import DashboardHeader from '@/components/layout/DashboardHeader'
 import EventSelector from '@/components/EventSelector'
-import { getAdminSession, useAdminName } from '@/lib/adminAuth'
+import { getAdminSession, useAdminName, adminFetch } from '@/lib/adminAuth'
 import { useSelectedEventId } from '@/lib/eventStore'
 import { useSelectedEventStatus } from '@/lib/useEventStatus'
 import { useLang } from '@/lib/i18n'
@@ -42,7 +42,7 @@ export default function SuperAdminBandsPage() {
 
   const load = () => {
     const url = eventId ? `/api/bands?event=${encodeURIComponent(eventId)}` : '/api/bands'
-    fetch(url)
+    adminFetch(url)
       .then((r) => r.json())
       .then((res) => {
         if (res.error) throw new Error(res.error)
@@ -91,7 +91,7 @@ export default function SuperAdminBandsPage() {
     try {
       const fd = new FormData()
       fd.append('file', file)
-      const res = await fetch('/api/uploads', { method: 'POST', body: fd })
+      const res = await adminFetch('/api/uploads', { method: 'POST', body: fd })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal upload gambar', EN: 'Failed to upload image' }))
       return result.url as string
@@ -117,7 +117,7 @@ export default function SuperAdminBandsPage() {
       const payload = { nama_band: form.nama_band.trim(), deskripsi: form.deskripsi.trim() || null, gambar, event: eventId || null }
 
       if (editing) {
-        const res = await fetch(`/api/bands/${editing}`, {
+        const res = await adminFetch(`/api/bands/${editing}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -125,7 +125,7 @@ export default function SuperAdminBandsPage() {
         const result = await res.json()
         if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal menyimpan band', EN: 'Failed to save band' }))
       } else {
-        const res = await fetch('/api/bands', {
+        const res = await adminFetch('/api/bands', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
@@ -150,7 +150,7 @@ export default function SuperAdminBandsPage() {
     if (!confirm(`${t({ ID: 'Hapus band', EN: 'Delete band' })} "${b.nama_band}"?`)) return
     setError('')
     try {
-      const res = await fetch(`/api/bands/${b.id}`, { method: 'DELETE' })
+      const res = await adminFetch(`/api/bands/${b.id}`, { method: 'DELETE' })
       const result = await res.json()
       if (!res.ok) throw new Error(result.error || t({ ID: 'Gagal menghapus band', EN: 'Failed to delete band' }))
       load()

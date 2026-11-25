@@ -31,11 +31,11 @@ interface EventInfo {
 }
 
 const DEFAULT_EVENT: EventInfo = {
-  nama_event: 'CoravFest',
+  nama_event: 'Event EncoreTix',
   tanggal: '-',
   jam: '-',
   lokasi: '-',
-  gambar: '/coravfest.jpg',
+  gambar: '/logo.png',
 }
 
 function formatEventDate(iso: string | null): string {
@@ -103,6 +103,7 @@ export default function TiketDetailPage() {
   const [error, setError] = useState('')
   const [currentIndex, setCurrentIndex] = useState(0)
   const [activeEvent, setActiveEvent] = useState<{ id: string; nama_event: string } | null>(null)
+  const [showCodeLockPopup, setShowCodeLockPopup] = useState(false)
 
   useEffect(() => {
     fetch('/api/events?active=true')
@@ -125,9 +126,17 @@ export default function TiketDetailPage() {
   useEffect(() => {
     if (!bookingCode) return
     fetch(`/api/transactions/${encodeURIComponent(bookingCode)}`)
-      .then((r) => r.json())
+      .then(async (r) => {
+        const res = await r.json()
+        if (res.code_locked) {
+          setShowCodeLockPopup(true)
+          return null
+        }
+        if (res.error) throw new Error(res.error)
+        return res
+      })
       .then((pesananRes) => {
-        if (pesananRes.error) throw new Error(pesananRes.error)
+        if (!pesananRes) return
         setBooking(pesananRes.data)
         if (pesananRes.data?.status_bayar === 'berhasil') {
           clearPaymentCountdown()
@@ -137,6 +146,27 @@ export default function TiketDetailPage() {
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
   }, [bookingCode])
+
+  if (showCodeLockPopup) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+        <div className="w-full max-w-sm rounded-2xl bg-white p-6 text-center shadow-xl">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-amber-100 text-xl font-bold text-amber-600">
+            !
+          </div>
+          <p className="text-sm font-semibold leading-relaxed text-gray-800">
+            Hai customer! Cek kembali kode tiket anda melalui akun gmail yang digunakan saat pemesanan, Terimakasih.
+          </p>
+          <button
+            onClick={() => router.push('/tiket-saya')}
+            className="mt-5 w-full rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 py-3 text-sm font-semibold text-white cursor-pointer"
+          >
+            Kembali
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   const cust = booking?.customers
   const totalTickets = booking?.jumlah || 1
