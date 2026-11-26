@@ -124,6 +124,44 @@ async function getMerchContext(
   }
 }
 
+const SENSITIVE_QUERY_PATTERNS = [
+  /\batas\s+nama\b/i,
+  /\batasnama\b/i,
+  /\bmilik\s+siapa\b/i,
+  /\bpunya\s+siapa\b/i,
+  /\bnama\s+pemesan\b/i,
+  /\bpemilik\s+tiket\b/i,
+  /\bdata\s+pemesan\b/i,
+  /\bdata\s+pembeli\b/i,
+  /\bidentitas\s+pemesan\b/i,
+  /\bnomor\s+identitas\b/i,
+  /\bno\s+identitas\b/i,
+  /\bnik\b/i,
+  /\bktp\b/i,
+  /\bpaspor\b/i,
+  /\bno\s*hp\b/i,
+  /\bnomor\s*hp\b/i,
+  /\bno\s*wa\b/i,
+  /\bnomor\s*wa\b/i,
+  /\bwhatsapp\b/i,
+  /\bemail\s+pemesan\b/i,
+  /\bemail\s+pembeli\b/i,
+  /\balamat\s+pemesan\b/i,
+  /\bjenis\s+kelamin\b/i,
+  /\btanggal\s+lahir\b/i,
+  /\busia\s+pemesan\b/i,
+  /\bcari\s+(tiket|pesanan|booking|order)\b.*\bnama\b/i,
+  /\bnama\b.*\bcari\s+(tiket|pesanan|booking|order)\b/i,
+]
+
+function isSensitiveIdentityQuery(text: string): boolean {
+  return SENSITIVE_QUERY_PATTERNS.some((pattern) => pattern.test(text))
+}
+
+function sensitiveQueryReply(): string {
+  return 'Maaf, saya tidak bisa membantu mencari atau membagikan data pribadi/identitas pemesan (seperti nama, email, nomor HP, NIK, atau data sensitif lainnya). Untuk cek pesanan Anda sendiri, silakan gunakan kode booking di menu Tiket Saya (/tiket-saya) atau hubungi Customer Service resmi EncoreTix melalui WhatsApp +62 877-6374-3577 (https://wa.me/6287763743577).'
+}
+
 // Cek status booking langsung jika user menanyakan kode booking tertentu
 async function lookupBookingInfo(supabase: ReturnType<typeof getServerSupabase>, text: string) {
   const match = /(?:ETX|PESANAN|MERCH)-[A-Z0-9-]+|[0-9a-f]{8}-[0-9a-f]{4}/i.exec(text)
@@ -325,6 +363,10 @@ export async function POST(request: Request) {
       )
     }
 
+    if (isSensitiveIdentityQuery(latestUserMessage)) {
+      return NextResponse.json({ reply: sensitiveQueryReply() })
+    }
+
     const messages: ChatMessage[] = incoming
       .slice(-MAX_HISTORY)
       .map((m) => ({ role: m.role, content: m.content.slice(0, MAX_MESSAGE_CHARS) }))
@@ -339,11 +381,11 @@ export async function POST(request: Request) {
     const supabase = getServerSupabase()
     const activeEvent = await getActiveEvent(supabase)
 
-    // Ambil data real-time dari database — khusus event aktif saja.
+    // Ambil data real-time dari database �?" khusus event aktif saja.
     const [eventCtx, merchCtx, bookingLookup] = await Promise.all([
       getEventContext(supabase, activeEvent),
       getMerchContext(supabase, activeEvent),
-      lookupBookingInfo(supabase, latestUserMessage),
+      isSensitiveIdentityQuery(latestUserMessage) ? Promise.resolve(null) : lookupBookingInfo(supabase, latestUserMessage),
     ])
 
     const systemPrompt = `Kamu adalah "Encore Assistant", asisten AI virtual resmi untuk platform ticketing dan merchandise konser musik "EncoreTix".
@@ -369,8 +411,10 @@ ${merchCtx}
 - Sertakan juga bahwa e-tiket tetap bisa diakses/diunduh di menu "Tiket Saya" (/tiket-saya) sebagai cadangan bila email belum diterima.
 - Untuk kendala ringan (cara beli, metode bayar, cek status, sisa kuota, batas pengambilan), jawab langsung sesuai panduan di atas tanpa perlu mengarahkan ke CS.
 - Untuk pertanyaan status tiket/pesanan, wajib memakai [DATA SISTEM KODE TRANSAKSI] bila ada kode booking. Tanpa kode booking, jangan mengarang jawaban: minta kode booking (contoh: ETX-XXXXXX) atau arahkan ke menu Tiket Saya (/tiket-saya). Jangan menjawab pertanyaan tiket dengan instruksi login akun.
+- Jika user meminta mencari tiket/pesanan berdasarkan nama/identitas, tolak dengan sopan dan jelaskan alasan privasi/keamanan. Jangan memberikan petunjuk cara mencari data pribadi orang lain.
 8. Privasi & Data Sensitif (WAJIB):
 - JANGAN pernah membagikan data pribadi siapa pun: NIK/no identitas, no HP, umur, jenis kelamin, alamat, maupun email lengkap. Bila perlu menyebut email, gunakan versi tersamarkan (contoh: a***@gmail.com).
+- JANGAN pernah mencari, mengidentifikasi, atau mengonfirmasi kepemilikan tiket/pesanan berdasarkan nama orang, nomor HP, email, NIK, atau identitas lain. Tolak permintaan seperti "tiket atas nama ...", "pesanan milik siapa", atau "cari pesanan nama ...".
 - Saat menjelaskan status pesanan, cukup sebut status (mis. LUNAS/PENDING), jumlah, dan link halaman terkait. Jangan membacakan ulang data pribadi pemesan.
 - JANGAN membocorkan info internal: struktur database, nama tabel/kolom, API key, kredensial, kode sumber, atau konfigurasi server.
 - JANGAN memberikan laporan/omzet, statistik penjualan, data panitia/staff, atau data event lain.

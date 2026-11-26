@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import RealQR from '@/components/RealQR'
 
 export interface DirectPaymentData {
@@ -41,8 +41,12 @@ export default function DirectPaymentView({
   onChangeMethod,
 }: DirectPaymentViewProps) {
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const [checking, setChecking] = useState(false)
   const [isPaid, setIsPaid] = useState(false)
+  const onSuccessRef = useRef(onSuccess)
+  useEffect(() => { onSuccessRef.current = onSuccess })
+  // Simpan isPaid di ref agar checkPaymentStatus tidak berubah referensi setiap render
+  const isPaidRef = useRef(isPaid)
+  useEffect(() => { isPaidRef.current = isPaid }, [isPaid])
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text)
@@ -52,10 +56,9 @@ export default function DirectPaymentView({
     }, 2000)
   }
 
-  // Polling status pesanan
+  // Cek status pembayaran sekali (dipanggil oleh interval polling)
   const checkPaymentStatus = useCallback(async () => {
-    if (isPaid || !bookingCode) return
-    setChecking(true)
+    if (isPaidRef.current || !bookingCode) return
     try {
       const endpoint = isMerch
         ? `/api/merch/orders/${encodeURIComponent(bookingCode)}`
@@ -68,21 +71,18 @@ export default function DirectPaymentView({
       if (status === 'berhasil') {
         setIsPaid(true)
         setTimeout(() => {
-          onSuccess()
+          onSuccessRef.current()
         }, 1200)
       }
     } catch {
       // ignore network glitch
-    } finally {
-      setChecking(false)
     }
-  }, [bookingCode, isMerch, isPaid, onSuccess])
+  }, [bookingCode, isMerch]) // referensi stabil — tidak bergantung isPaid
 
+  // Polling otomatis setiap 4 detik (interval tidak di-reset terus karena checkPaymentStatus stabil)
   useEffect(() => {
     if (isPaid) return
-    const interval = setInterval(() => {
-      checkPaymentStatus()
-    }, 4000)
+    const interval = setInterval(checkPaymentStatus, 4000)
     return () => clearInterval(interval)
   }, [checkPaymentStatus, isPaid])
 
@@ -144,15 +144,6 @@ export default function DirectPaymentView({
               {isPaid ? 'Pembayaran berhasil dikonfirmasi' : 'Menunggu pembayaran...'}
             </span>
           </div>
-
-          <button
-            type="button"
-            onClick={checkPaymentStatus}
-            disabled={checking || isPaid}
-            className="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 transition shadow-sm cursor-pointer disabled:cursor-not-allowed"
-          >
-            {checking ? 'Memeriksa...' : 'Cek Status'}
-          </button>
         </div>
 
         {/* 1. KONTEN QRIS */}
