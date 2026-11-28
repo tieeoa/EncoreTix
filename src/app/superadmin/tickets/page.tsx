@@ -221,7 +221,7 @@ export default function SuperAdminTicketsPage() {
         <DashboardHeader
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Search tickets..."
+          searchPlaceholder={t({ ID: 'Cari tiket...', EN: 'Search tickets...' })}
           userName={adminName || 'Super Admin'}
           userRole="Super Admin"
         />

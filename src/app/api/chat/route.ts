@@ -8,6 +8,23 @@ export const dynamic = 'force-dynamic'
 const MAX_MESSAGE_CHARS = 1000
 const MAX_HISTORY = 12
 
+const ALLOWED_LINK_PATTERNS = [
+  /^\/$/,
+  /^\/#section-(lineup|deskripsi|syarat)$/,
+  /^\/(tiket|merchandise|tentang-event|cara-pembelian|kontak|tiket-saya|merch-saya|checkout|payment)(\/[A-Za-z0-9_-]+)?$/,
+  /^https:\/\/wa\.me\/6287763743577$/,
+]
+
+function sanitizeLinks(text: string): string {
+  return text.replace(
+    /\[([^\]]+)\]\(([^)]+)\)/g,
+    (match, label: string, url: string) =>
+      ALLOWED_LINK_PATTERNS.some((pattern) => pattern.test(url.trim()))
+        ? `[${label}](${url.trim()})`
+        : label
+  )
+}
+
 interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
@@ -86,12 +103,12 @@ async function getEventContext(
 
     return {
       activeEventName: activeEvent.nama_event,
-      eventsList: `- ${activeEvent.nama_event} (AKTIF) | Tanggal: ${activeEvent.tanggal || '-'} | Waktu: ${activeEvent.waktu || '-'} | Lokasi: ${activeEvent.venue || activeEvent.alamat || '-'} | Tiket: ${tixStr} | Link: /event/${activeEvent.id}`,
+      eventsList: `- ${activeEvent.nama_event} (AKTIF) | Tanggal: ${activeEvent.tanggal || '-'} | Waktu: ${activeEvent.waktu || '-'} | Lokasi: ${activeEvent.venue || activeEvent.alamat || '-'} | Tiket: ${tixStr} | Link halaman event: /tentang-event/${activeEvent.id} | Link line up: /#section-lineup`,
     }
   } catch {
     return {
       activeEventName: activeEvent?.nama_event || 'EncoreTix Event',
-      eventsList: 'Informasi event dapat dilihat di menu Konser.',
+      eventsList: 'Informasi event dapat dilihat di halaman Utama (/).',
     }
   }
 }
@@ -121,6 +138,26 @@ async function getMerchContext(
       .join('\n')
   } catch {
     return 'Merchandise resmi dapat dilihat di menu Merchandise.'
+  }
+}
+
+async function getLineUpContext(
+  supabase: ReturnType<typeof getServerSupabase>,
+  activeEvent: EventInfo | null
+) {
+  if (!activeEvent) return 'Belum ada event aktif, jadi line up belum tersedia.'
+  try {
+    const { data: bands } = await supabase
+      .from('band')
+      .select('nama_band')
+      .eq('id_event', activeEvent.id)
+      .order('created_at', { ascending: true })
+      .limit(20)
+
+    if (!bands || bands.length === 0) return 'Line up untuk event ini belum diumumkan.'
+    return bands.map((b) => `- ${b.nama_band}`).join('\n')
+  } catch {
+    return 'Line up untuk event ini belum diumumkan.'
   }
 }
 
@@ -158,7 +195,10 @@ function isSensitiveIdentityQuery(text: string): boolean {
   return SENSITIVE_QUERY_PATTERNS.some((pattern) => pattern.test(text))
 }
 
-function sensitiveQueryReply(): string {
+function sensitiveQueryReply(lang: 'ID' | 'EN'): string {
+  if (lang === 'EN') {
+    return 'Sorry, I cannot help find or share any personal/identity data of ticket holders (such as name, email, phone number, ID number, or other sensitive data). To check your own order, please use your booking code in My Tickets (/tiket-saya) or contact official EncoreTix Customer Service on WhatsApp +62 877-6374-3577 (https://wa.me/6287763743577).'
+  }
   return 'Maaf, saya tidak bisa membantu mencari atau membagikan data pribadi/identitas pemesan (seperti nama, email, nomor HP, NIK, atau data sensitif lainnya). Untuk cek pesanan Anda sendiri, silakan gunakan kode booking di menu Tiket Saya (/tiket-saya) atau hubungi Customer Service resmi EncoreTix melalui WhatsApp +62 877-6374-3577 (https://wa.me/6287763743577).'
 }
 
@@ -337,8 +377,10 @@ export async function POST(request: Request) {
   const rl = checkRateLimit(`chat:${getClientIp(request)}`, { max: 15, windowMs: 60_000 })
   if (!rl.allowed) return rateLimitResponse(rl.resetAt)
 
+  let requestedLang: 'ID' | 'EN' = 'ID'
   try {
     const body = await request.json()
+    requestedLang = body?.lang === 'EN' ? 'EN' : 'ID'
     const rawMessages: unknown = body?.messages
     const incoming: ChatMessage[] = Array.isArray(rawMessages)
       ? (rawMessages as unknown[]).filter(
@@ -364,7 +406,7 @@ export async function POST(request: Request) {
     }
 
     if (isSensitiveIdentityQuery(latestUserMessage)) {
-      return NextResponse.json({ reply: sensitiveQueryReply() })
+      return NextResponse.json({ reply: sensitiveQueryReply(requestedLang) })
     }
 
     const messages: ChatMessage[] = incoming
@@ -374,7 +416,9 @@ export async function POST(request: Request) {
     const apiKey = process.env.GEMINI_API_KEY
     if (!apiKey) {
       return NextResponse.json({
-        reply: 'Halo! Fitur asisten AI EncoreTix sedang dalam pemeliharaan (API key belum dikonfigurasi). Kamu tetap bisa melihat konser di menu Konser atau menghubungi kami via menu Kontak.',
+        reply: requestedLang === 'EN'
+          ? 'Hi! The EncoreTix AI assistant is currently under maintenance (API key is not configured). You can still see event details on the Home page or reach us via the Contact page.'
+          : 'Halo! Fitur asisten AI EncoreTix sedang dalam pemeliharaan (API key belum dikonfigurasi). Kamu tetap bisa melihat detail event di halaman Utama atau menghubungi kami via menu Kontak.',
       })
     }
 
@@ -382,14 +426,15 @@ export async function POST(request: Request) {
     const activeEvent = await getActiveEvent(supabase)
 
     // Ambil data real-time dari database �?" khusus event aktif saja.
-    const [eventCtx, merchCtx, bookingLookup] = await Promise.all([
+    const [eventCtx, merchCtx, lineUpCtx, bookingLookup] = await Promise.all([
       getEventContext(supabase, activeEvent),
       getMerchContext(supabase, activeEvent),
+      getLineUpContext(supabase, activeEvent),
       isSensitiveIdentityQuery(latestUserMessage) ? Promise.resolve(null) : lookupBookingInfo(supabase, latestUserMessage),
     ])
 
     const systemPrompt = `Kamu adalah "Encore Assistant", asisten AI virtual resmi untuk platform ticketing dan merchandise konser musik "EncoreTix".
-Persona kamu: ramah, bersemangat tentang musik/konser, santai tapi sopan, responsif, dan to the point. Selalu gunakan Bahasa Indonesia yang natural.
+Persona kamu: ramah, bersemangat tentang musik/konser, santai tapi sopan, responsif, dan to the point. Selalu gunakan Bahasa ${requestedLang === 'EN' ? 'Inggris' : 'Indonesia'} yang natural.
 
 PENGETAHUAN UTAMA ENCORETIX:
 1. Tentang EncoreTix: Platform resmi pemesanan tiket konser musik, festival, dan official band merchandise.
@@ -426,13 +471,19 @@ ${merchCtx}
 - JANGAN pernah menyebut, membandingkan, atau menggabungkan data dari event lain, walaupun user bertanya "tiket apa saja" atau "merch apa saja". Jika untuk event aktif belum ada, katakan belum tersedia untuk event ini.
 11. Jam Tutup Penjualan:
 - Jika user bertanya kapan penjualan tiket/merchandise ditutup atau sampai kapan bisa membeli (dan pertanyaan sejenis), jawab: "Biasanya kami menutup penjualan H-1 acara, tapi kalau ada informasi lebih lanjut, pantau Instagram kami ya." Jangan mengarang tanggal/jam tutup yang spesifik.
+12. Line Up / Pengisi Acara Event Aktif (DATA REAL — HANYA ini yang boleh disebut):
+${lineUpCtx}
+- Jika data di atas mengatakan belum diumumkan, jawab terus terang "Line up belum diumumkan." JANGAN mengarang nama band/artis, walaupun user menyebut nama dari event lain.
+- Tautan resmi line up: [Lihat Line Up](/#section-lineup).
 
 ${bookingLookup ? `INFORMASI STATUS KODE TRANSAKSI YANG DITANYAKAN USER:\n${bookingLookup}\n(Gunakan data ini untuk menjawab pertanyaan status pemesanannya secara akurat dan beri link ke halaman tiket/merch terkait!)` : ''}
 
 ATURAN MENJAWAB:
+- Balas seluruhnya dalam Bahasa ${requestedLang === 'EN' ? 'Inggris' : 'Indonesia'}, termasuk label tautan. Jangan mencampur bahasa.
 - Jawablah dengan ringkas, jelas, dan ramah (maksimal 2-3 paragraf singkat).
 - Jangan bertele-tele dan hindari jargon teknis yang membingungkan.
-- Jika merekomendasikan konser atau merchandise, sertakan link markdown yang relevan (misal: [Lihat Konser](/event/id) atau [Tiket Saya](/tiket-saya)).
+- Link markdown HANYA boleh memakai alamat yang benar-benar ada di aplikasi ini: /, /tiket, /tentang-event, /tentang-event/<id event aktif>, /#section-lineup, /merchandise, /merchandise/<id>, /tiket-saya, /tiket-saya/<kode>, /merch-saya, /merch-saya/<kode>, /cara-pembelian, /kontak, dan https://wa.me/6287763743577.
+- DILARANG mengarang atau menebak URL maupun nama halaman (contoh: /event/2 atau "Detail CoravFest Vol.2"). Kalau tidak yakin alamatnya, sebutkan nama menu tanpa link.
 - Jika user bertanya hal di luar konser/musik/EncoreTix, arahkan kembali dengan sopan ke topik konser dan tiket.`
 
     // Siapkan history untuk Gemini API
@@ -476,7 +527,7 @@ ATURAN MENJAWAB:
             .join('')
           if (text) {
             cachedModelName = model
-            return NextResponse.json({ reply: text })
+            return NextResponse.json({ reply: sanitizeLinks(text) })
           }
           lastError = `Model ${model} mengembalikan respons kosong.`
         }
@@ -491,7 +542,9 @@ ATURAN MENJAWAB:
     return NextResponse.json(
       {
         reply:
-          'Halo! Saya sedang mengalami kendala sementara dan belum bisa menjawab. Kamu bisa melihat info konser di menu Konser atau hubungi kami di menu Kontak.',
+          requestedLang === 'EN'
+            ? 'Hi! I am temporarily unavailable and cannot answer right now. You can see event details on the Home page or contact us via the Contact page.'
+            : 'Halo! Saya sedang mengalami kendala sementara dan belum bisa menjawab. Kamu bisa melihat detail event di halaman Utama atau hubungi kami di menu Kontak.',
       },
       { status: 200 }
     )

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
 import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 import { isTicketSalesClosed } from '../../lib/salesClosed'
-import { resolveEventId } from '../../lib/events'
+import { getEventById, resolveEventId } from '../../lib/events'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,7 +14,7 @@ export async function GET(request: Request) {
     const supabase = getServerSupabase()
     const { searchParams } = new URL(request.url)
     const eventId = await resolveEventId(supabase, searchParams.get('event'))
-    if (!eventId) return NextResponse.json({ data: [], sales_closed: true })
+    if (!eventId) return NextResponse.json({ data: [], sales_closed: true, paused: false })
 
     let query = supabase.from('tiket').select('*')
     if (eventId) {
@@ -23,8 +23,11 @@ export async function GET(request: Request) {
     const { data, error } = await query.order('created_at', { ascending: true })
 
     if (error) throw new Error(error.message)
-    const sales_closed = await isTicketSalesClosed(supabase, eventId)
-    return NextResponse.json({ data, sales_closed })
+    const [sales_closed, event] = await Promise.all([
+      isTicketSalesClosed(supabase, eventId),
+      getEventById(supabase, eventId),
+    ])
+    return NextResponse.json({ data, sales_closed, paused: event?.status === 'paused' })
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
     return NextResponse.json({ error: message }, { status: 500 })

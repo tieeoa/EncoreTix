@@ -272,7 +272,7 @@ export default function SuperAdminEventsPage() {
       <SuperAdminSidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <DashboardHeader
-          searchPlaceholder="Search events..."
+          searchPlaceholder={t({ ID: 'Cari event...', EN: 'Search events...' })}
           userName={adminName || 'Super Admin'}
           userRole="Super Admin"
         />

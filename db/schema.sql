@@ -1,7 +1,11 @@
 ﻿-- ============================================================
 -- Skema database Supabase untuk EncoreTix
 -- Berdasarkan ERD MySQL, dikonversi untuk PostgreSQL/Supabase
--- Cara pakai: buka dashboard supabase -> SQL Editor -> tempel & jalankan semua.
+-- Cara pakai (historis): dashboard supabase -> SQL Editor -> tempel & jalankan semua.
+--
+-- CATATAN PENTING: file ini adalah REFERENSI/ARSIP berdialek PostgreSQL/Supabase.
+-- Runtime aplikasi sekarang memakai MySQL lokal lewat src/app/lib/mysqlClient.ts.
+-- Jangan menjalankan file ini sebagai migrasi produksi tanpa dikonversi ke MySQL.
 -- ============================================================
 
 -- ---------- 1. TABEL CUSTOMER ----------

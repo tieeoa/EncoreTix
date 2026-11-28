@@ -38,6 +38,7 @@ function MerchandiseDetailContent() {
 
   const [product, setProduct] = useState<MerchandiseData | null>(null)
   const [others, setOthers] = useState<MerchandiseData[]>([])
+  const [paused, setPaused] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeImage, setActiveImage] = useState(0)
@@ -68,6 +69,10 @@ function MerchandiseDetailContent() {
 
   useEffect(() => {
     clearMerchCheckoutDraft()
+    fetch('/api/events?active=true')
+      .then((r) => r.json())
+      .then((res) => setPaused(res?.data?.status === 'paused'))
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -104,6 +109,13 @@ function MerchandiseDetailContent() {
       .catch(() => {})
   }, [id])
 
+  const getEffectiveSize = (p: MerchandiseData) => {
+    if (isFreeSizeProduct(p as unknown as Record<string, unknown>)) return FREE_SIZE
+    if (size) return size
+    const avail = MERCH_SIZES.filter((s) => (p.sisa_stok?.[s] ?? 0) > 0)
+    return avail.length === 1 ? avail[0] : ''
+  }
+
   const flashToast = (msg: string) => {
     setToast(msg)
     if (toastTimer.current) window.clearTimeout(toastTimer.current)
@@ -111,16 +123,16 @@ function MerchandiseDetailContent() {
   }
 
   const handleAddCart = () => {
-    if (!product) return
-    const effectiveSize = isFree ? FREE_SIZE : size
+    if (paused || !product) return
+    const effectiveSize = getEffectiveSize(product)
     if (!effectiveSize || remainingSelected <= 0) return
     addItem(product.id, effectiveSize, qty)
     flashToast(`${product.nama_merch}${isFree ? '' : ' · ' + effectiveSize} · ${qty}`)
   }
 
   const handleCheckoutNow = () => {
-    if (!product) return
-    const effectiveSize = isFree ? FREE_SIZE : size
+    if (paused || !product) return
+    const effectiveSize = getEffectiveSize(product)
     if (!effectiveSize || remainingSelected <= 0) return
     pushStoredCartItem(product.id, effectiveSize, qty)
     router.push('/checkout/merch')
@@ -143,10 +155,13 @@ function MerchandiseDetailContent() {
   const sisa = product.sisa_stok ?? {}
   const unavailable = product.status === 'nonaktif'
   const isFree = isFreeSizeProduct(product as unknown as Record<string, unknown>)
+  const availableSizes = MERCH_SIZES.filter((s) => (sisa[s] ?? 0) > 0)
+  const hideSizePicker = isFree || availableSizes.length <= 1
+  const effectiveSize = getEffectiveSize(product)
   const soldOut = isFree
     ? (sisa[FREE_SIZE] ?? 0) <= 0
     : MERCH_SIZES.every((s) => (sisa[s] ?? 0) <= 0)
-  const remainingSelected = isFree ? (sisa[FREE_SIZE] ?? 0) : (size ? (sisa[size] ?? 0) : 0)
+  const remainingSelected = effectiveSize ? (sisa[effectiveSize] ?? 0) : 0
   const subtotal = Number(product.harga) * qty
   const gallery = photos
   const currImage = gallery[Math.min(activeImage, gallery.length - 1)] || null
@@ -210,7 +225,11 @@ function MerchandiseDetailContent() {
             ) : (
               <div className="text-8xl opacity-20">👕</div>
             )}
-            {unavailable ? (
+            {paused ? (
+              <span className="absolute top-4 left-4 text-xs font-semibold px-3 py-1 rounded-full bg-amber-500/90 text-white">
+                {t({ ID: 'Event Dijeda Sebentar', EN: 'Event Temporarily Paused' })}
+              </span>
+            ) : unavailable ? (
               <span className="absolute top-4 left-4 text-xs font-semibold px-3 py-1 rounded-full bg-gray-700/80 text-gray-300">
                 {t({ ID: 'Penjualan Telah Berakhir', EN: 'Sales Have Ended' })}
               </span>
@@ -253,42 +272,37 @@ function MerchandiseDetailContent() {
           </p>
 
           {/* Ukuran */}
-          {!soldOut && !unavailable && (
+          {!soldOut && !unavailable && !hideSizePicker && (
             <div className="mb-6">
-              {isFree ? (
-                <p className="text-xs text-gray-500 mb-2 bg-gray-50 rounded-lg px-3 py-2">
-                  {t({ ID: '✓ Produk ini tidak memiliki pilihan ukuran', EN: '✓ This product has no size options' })}
-                </p>
-              ) : (
-                <>
-                  <p className="text-xs font-semibold text-gray-700 mb-2">
-                    {t({ ID: 'Ukuran', EN: 'Size' })} <span className="text-red-500">*</span>
-                  </p>
-                  <div className="flex gap-2 flex-wrap">
-                    {MERCH_SIZES.map((s) => {
-                      const sisaSize = sisa[s] ?? 0
-                      return (
-                        <button
-                          key={s}
-                          type="button"
-                          disabled={sisaSize <= 0}
-                          onClick={() => { setSize(s); setQty(1) }}
-                          className={`min-w-12 h-11 px-3 rounded-lg border text-sm font-semibold transition-colors ${
-                            size === s ? 'bg-gradient-to-r from-indigo-600 to-violet-600 border-transparent text-white' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-400'
-                          } ${sisaSize <= 0 ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed hover:border-gray-200' : ''}`}
-                        >
-                          {s}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </>
-              )}
+              <p className="text-xs font-semibold text-gray-700 mb-2">
+                {t({ ID: 'Ukuran', EN: 'Size' })} <span className="text-red-500">*</span>
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                {MERCH_SIZES.map((s) => {
+                  const sisaSize = sisa[s] ?? 0
+                  const habis = sisaSize <= 0
+                  return (
+                    <button
+                      key={s}
+                      type="button"
+                      disabled={habis}
+                      onClick={() => { setSize(s); setQty(1) }}
+                      title={habis ? t({ ID: 'Ukuran ini sudah habis', EN: 'This size is sold out' }) : `${s}: ${sisaSize}`}
+                      className={`min-w-14 h-12 px-3 rounded-lg border text-sm font-semibold transition-colors flex flex-col items-center justify-center leading-tight ${
+                        size === s && !habis ? 'bg-gradient-to-r from-indigo-600 to-violet-600 border-transparent text-white' : 'bg-white border-gray-200 text-gray-700 hover:border-gray-400'
+                      } ${habis ? 'bg-gray-100 border-gray-200 text-gray-300 cursor-not-allowed hover:border-gray-200' : ''}`}
+                    >
+                      <span>{s}</span>
+                      {habis && <span className="text-[9px] font-semibold text-rose-400">{t({ ID: 'Habis', EN: 'Sold out' })}</span>}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
           )}
 
           {/* Qty */}
-          {!soldOut && !unavailable && (isFree || size) && remainingSelected > 0 && (
+          {!soldOut && !unavailable && !!effectiveSize && remainingSelected > 0 && (
             <div className="mb-6">
               <p className="text-xs font-semibold text-gray-700 mb-2">{t({ ID: 'Jumlah', EN: 'Quantity' })}</p>
               <div className="flex items-center border border-gray-200 rounded-lg w-fit">
@@ -308,7 +322,14 @@ function MerchandiseDetailContent() {
           )}
 
           {/* CTA */}
-          {unavailable ? (
+          {paused ? (
+            <div className="space-y-2">
+              <button disabled className="w-full py-3.5 rounded-xl bg-amber-100 text-amber-700 font-semibold cursor-not-allowed">
+                {t({ ID: 'Event sedang dijeda sebentar', EN: 'Event is temporarily paused' })}
+              </button>
+              <p className="text-xs text-center text-gray-500">{t({ ID: 'Pemesanan belum dibuka. Cek kembali sebentar lagi ya.', EN: 'Ordering is not open yet. Please check back shortly.' })}</p>
+            </div>
+          ) : unavailable ? (
             <button disabled className="w-full py-3.5 rounded-xl bg-gray-200 text-gray-400 font-semibold cursor-not-allowed">
               {t({ ID: 'Dapatkan Saat Event Dimulai!', EN: 'Get It When the Event Starts!' })}
             </button>
@@ -319,18 +340,18 @@ function MerchandiseDetailContent() {
           ) : (
             <div className="flex flex-col gap-2">
               <button
-                disabled={!size || remainingSelected <= 0}
+                disabled={!effectiveSize || remainingSelected <= 0}
                 onClick={handleAddCart}
                 className="w-full py-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white font-semibold transition-colors disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed cursor-pointer"
               >
-                {!size
+                {!effectiveSize
                   ? t({ ID: 'Pilih Ukuran Dulu', EN: 'Select a Size First' })
                   : remainingSelected <= 0
                     ? t({ ID: 'Stok Habis', EN: 'Out of Stock' })
                     : `🛒 ${t({ ID: 'Tambah ke Keranjang', EN: 'Add to Cart' })}`}
               </button>
               <button
-                disabled={!size || remainingSelected <= 0}
+                disabled={!effectiveSize || remainingSelected <= 0}
                 onClick={handleCheckoutNow}
                 className="w-full py-3 rounded-xl border border-indigo-600 text-indigo-600 hover:bg-indigo-600 hover:text-white font-semibold transition-colors disabled:border-gray-200 disabled:text-gray-300 disabled:cursor-not-allowed disabled:hover:bg-transparent disabled:hover:text-gray-300 cursor-pointer"
               >

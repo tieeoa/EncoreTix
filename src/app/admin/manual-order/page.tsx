@@ -448,7 +448,7 @@ export default function AdminManualOrderPage() {
       <AdminSidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <DashboardHeader
-          searchPlaceholder="Search manual orders..."
+          searchPlaceholder={t({ ID: 'Cari order manual...', EN: 'Search manual orders...' })}
           userName={adminName || 'Panitia'}
           userRole="Admin Panitia"
         />

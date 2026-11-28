@@ -1,6 +1,4 @@
 import QRCode from 'qrcode'
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import {
   PDFDocument,
   StandardFonts,
@@ -10,6 +8,7 @@ import {
   type PDFPage,
 } from 'pdf-lib'
 import type { EventDisplay } from './events'
+import { getPosterJpeg } from './posterImage'
 
 export interface MerchPdfItem {
   nama_merch: string
@@ -79,7 +78,7 @@ export async function generateMerchPdf(data: MerchPdfData): Promise<Buffer> {
 
   let posterImage: PDFImage | null = null
   try {
-    const posterBytes = await readFile(path.join(process.cwd(), 'public', 'coravfest.jpg'))
+    const posterBytes = await getPosterJpeg(data.event.gambar, 1190, 380)
     posterImage = await pdfDoc.embedJpg(new Uint8Array(posterBytes))
   } catch {
     posterImage = null
@@ -91,28 +90,19 @@ export async function generateMerchPdf(data: MerchPdfData): Promise<Buffer> {
 
   page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(1, 1, 1) })
 
-  const headerTop = H
-  page.drawRectangle({ x: 0, y: headerTop - 170, width: W, height: 170, color: NAVY })
-
-  page.drawText('OFFICIAL MERCHANDISE', { x: 24, y: headerTop - 40, size: 13, font: fontBold, color: BLUE })
-  page.drawText(data.event.nama_event, { x: 24, y: headerTop - 76, size: 24, font: fontBold, color: rgb(1, 1, 1) })
-  drawShrinkText(page, font, `${data.event.tanggal} · ${data.event.jam}`, 24, headerTop - 104, 12, 350, rgb(0.82, 0.85, 0.89))
-  drawShrinkText(page, font, data.event.lokasi, 24, headerTop - 126, 11, 350, rgb(0.61, 0.63, 0.68))
-  page.drawText('BUKTI PENGAMBILAN MERCHANDISE', { x: 24, y: headerTop - 152, size: 14, font: fontBold, color: rgb(0.95, 0.97, 1) })
-
+  // Poster event selebar halaman di bagian atas
+  const bannerHeight = 190
   if (posterImage) {
-    const posterScale = Math.min(170 / posterImage.width, 170 / posterImage.height)
-    const pw = posterImage.width * posterScale
-    const ph = posterImage.height * posterScale
-    page.drawImage(posterImage, {
-      x: W - pw,
-      y: headerTop - ph,
-      width: pw,
-      height: ph,
-    })
+    page.drawImage(posterImage, { x: 0, y: H - bannerHeight, width: W, height: bannerHeight })
   }
 
-  const stripY = headerTop - 170 - 14 - 52
+  const infoTop = H - bannerHeight
+  page.drawRectangle({ x: 0, y: infoTop - 70, width: W, height: 70, color: NAVY })
+  drawShrinkText(page, fontBold, 'BUKTI PENGAMBILAN — OFFICIAL MERCHANDISE', 24, infoTop - 20, 10, 547, BLUE)
+  drawShrinkText(page, fontBold, data.event.nama_event, 24, infoTop - 44, 18, 547, rgb(1, 1, 1))
+  drawShrinkText(page, font, `${data.event.tanggal} · ${data.event.jam} · ${data.event.lokasi}`, 24, infoTop - 62, 10, 547, rgb(0.82, 0.85, 0.89))
+
+  const stripY = infoTop - 70 - 14 - 52
   page.drawRectangle({ x: 40, y: stripY, width: 515, height: 52, color: LIGHT })
   drawShrinkText(page, font, 'PESANAN', 60, stripY + 36, 12, 200, GRAY)
   drawShrinkText(page, fontBold, data.items.length === 1
@@ -150,27 +140,9 @@ export async function generateMerchPdf(data: MerchPdfData): Promise<Buffer> {
 
   page.drawLine({ start: { x: 40, y: rowY - 2 }, end: { x: 555, y: rowY - 2 }, thickness: 1.5, color: LINE })
 
-  // Jika cuma 1 item, tampilkan ringkas di halaman pertama.
-  if (data.items.length === 1) {
-    const it = data.items[0]
-    const detailRows: [string, string][] = [
-      ['Produk', it.nama_merch],
-      ['Kategori', it.kategori || '-'],
-      ['Ukuran', it.ukuran || '-'],
-      ['Jumlah', String(it.jumlah)],
-      ['Alamat', data.alamat || 'Ambil di booth Official Merchandise'],
-    ]
-    let kY = rowY - 34
-    for (const [k, v] of detailRows) {
-      drawShrinkText(page, font, k, 40, kY, 11, 200, GRAY)
-      drawShrinkText(page, fontBold, v, 260, kY, 12, 295)
-      kY -= 22
-    }
-  } else {
-    drawShrinkText(page, fontBold, `Rincian ${data.items.length} item`, 40, rowY - 34, 12, 300, NAVY)
-    drawShrinkText(page, font, 'Lihat halaman berikutnya.', 320, rowY - 34, 10, 235, GRAY)
-    drawDetailPage(pdfDoc, font, fontBold, data)
-  }
+  drawShrinkText(page, fontBold, `Rincian ${data.items.length} item`, 40, rowY - 30, 12, 300, NAVY)
+  drawShrinkText(page, font, 'Lihat halaman berikutnya.', 320, rowY - 30, 10, 235, GRAY)
+  drawDetailPage(pdfDoc, font, fontBold, data)
 
   page.drawText(
     'Bukti ini adalah alat pengambilan merchandise di venue. Tunjukkan QR code & data identitas kepada petugas booth.',

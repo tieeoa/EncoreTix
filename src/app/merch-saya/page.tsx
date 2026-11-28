@@ -54,7 +54,7 @@ function MerchSayaContent() {
                 setInputCode(e.target.value)
                 setErrorMsg('')
               }}
-              placeholder={t({ ID: 'Contoh: ENC-9824-VX', EN: 'Example: ENC-9824-VX' })}
+              placeholder={t({ ID: 'Contoh: MERCH-XXXXXX', EN: 'Example: MERCH-XXXXXX' })}
               className="w-full px-4 py-3.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-gray-900 dark:text-white font-medium text-sm sm:text-base focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-transparent transition-all placeholder:text-gray-400"
             />
           </div>

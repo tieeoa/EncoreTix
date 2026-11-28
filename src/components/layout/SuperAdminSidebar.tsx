@@ -287,7 +287,7 @@ function SidebarBody({
               {eventsOpen
                 ? t({ ID: 'Klik untuk ganti event', EN: 'Click to switch event' })
                 : events.find((e) => e.id === selectedEventId)?.nama_event ||
-                  `${events.length + 1} ${t({ ID: 'event', EN: 'events' })}`}
+                  `${events.length} ${t({ ID: 'event', EN: 'events' })}`}
             </p>
           </div>
           <svg

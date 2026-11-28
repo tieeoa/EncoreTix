@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect, type PointerEvent as ReactPointerEvent } from 'react'
 import Link from 'next/link'
+import { useLang } from '@/lib/i18n'
 
 interface Message {
   id: string
@@ -12,14 +13,35 @@ interface Message {
 type WidgetPos = { x: number; y: number }
 
 const QUICK_PROMPTS = [
-  'Metode pembayaran apa saja yang didukung?',
-  'Bagaimana cara mengecek status tiket saya?',
-  'Cara ambil official merchandise di mana?',
+  { ID: 'Metode pembayaran apa saja yang didukung?', EN: 'What payment methods are supported?' },
+  { ID: 'Bagaimana cara mengecek status tiket saya?', EN: 'How do I check my ticket status?' },
+  { ID: 'Cara ambil official merchandise di mana?', EN: 'Where do I pick up official merchandise?' },
 ]
+
+const WELCOME = {
+  ID: 'Halo! Saya Encore Assistant. Ada yang bisa saya bantu seputar tiket konser atau official merchandise hari ini?',
+  EN: 'Hi! I am Encore Assistant. How can I help you with concert tickets or official merchandise today?',
+}
+
+const WELCOME_BACK = {
+  ID: 'Halo kembali! Ada informasi konser atau tiket lain yang ingin kamu tanyakan?',
+  EN: 'Welcome back! Anything else you would like to know about concerts or tickets?',
+}
 
 const WIDGET_POS_KEY = 'encore_chat_widget_pos'
 const WIDGET_MARGIN = 8
 const DRAG_THRESHOLD = 5
+
+const ALLOWED_CHAT_LINKS = [
+  /^\/$/,
+  /^\/#section-(lineup|deskripsi|syarat)$/,
+  /^\/(tiket|merchandise|tentang-event|cara-pembelian|kontak|tiket-saya|merch-saya|checkout|payment)(\/[A-Za-z0-9_-]+)?$/,
+  /^https:\/\/wa\.me\/6287763743577$/,
+]
+
+function isAllowedChatLink(url: string) {
+  return ALLOWED_CHAT_LINKS.some((pattern) => pattern.test(url.trim()))
+}
 
 function clampToViewport(x: number, y: number, w: number, h: number): WidgetPos {
   const maxX = window.innerWidth - w - WIDGET_MARGIN
@@ -42,6 +64,7 @@ function FormattedMessage({ content }: { content: string }) {
         const linkMatch = /^\[([^\]]+)\]\(([^)]+)\)$/.exec(part)
         if (linkMatch) {
           const [, label, url] = linkMatch
+          if (!isAllowedChatLink(url)) return <span key={idx}>{label}</span>
           const isInternal = url.startsWith('/')
           if (isInternal) {
             return (
@@ -79,17 +102,13 @@ function FormattedMessage({ content }: { content: string }) {
 }
 
 export default function ChatBot() {
+  const { t, lang } = useLang()
   const [isOpen, setIsOpen] = useState(false)
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [pos, setPos] = useState<WidgetPos | null>(null)
   const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 'welcome',
-      role: 'assistant',
-      content:
-        'Halo! Saya Encore Assistant. Ada yang bisa saya bantu seputar tiket konser atau official merchandise hari ini?',
-    },
+    { id: 'welcome', role: 'assistant', content: '' },
   ])
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -226,12 +245,13 @@ export default function ChatBot() {
       const res = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: updatedMessages.slice(-12).map((m) => ({
-            role: m.role,
-            content: m.content,
-          })),
-        }),
+          body: JSON.stringify({
+            lang,
+            messages: updatedMessages
+              .filter((m) => m.content.trim())
+              .slice(-12)
+              .map((m) => ({ role: m.role, content: m.content })),
+          }),
       })
 
       const data = await res.json().catch(() => ({}))
@@ -251,7 +271,10 @@ export default function ChatBot() {
         {
           id: String(++msgIdRef.current),
           role: 'assistant',
-          content: 'Maaf, terjadi gangguan jaringan. Silakan coba lagi nanti.',
+          content: t({
+            ID: 'Maaf, terjadi gangguan jaringan. Silakan coba lagi nanti.',
+            EN: 'Sorry, there was a network problem. Please try again later.',
+          }),
         },
       ])
     } finally {
@@ -260,14 +283,7 @@ export default function ChatBot() {
   }
 
   const handleReset = () => {
-    setMessages([
-      {
-        id: 'welcome',
-        role: 'assistant',
-        content:
-          'Halo kembali! Ada informasi konser atau tiket lain yang ingin kamu tanyakan?',
-      },
-    ])
+    setMessages([{ id: 'welcome-back', role: 'assistant', content: '' }])
   }
 
   return (
@@ -281,7 +297,7 @@ export default function ChatBot() {
           onPointerMove={handlePointerMove}
           onPointerUp={endDrag}
           onPointerCancel={endDrag}
-          aria-label="Buka bantuan Encore Assistant"
+          aria-label={t({ ID: 'Buka bantuan Encore Assistant', EN: 'Open Encore Assistant help' })}
           style={pos ? { left: pos.x, top: pos.y, touchAction: 'none' } : { touchAction: 'none' }}
           className={`fixed z-50 flex items-center gap-2 px-4 py-3 rounded-full bg-indigo-600 text-white shadow-lg hover:bg-indigo-700 transition-colors cursor-grab active:cursor-grabbing select-none ${
             pos ? '' : 'bottom-28 right-4 sm:bottom-24 sm:right-6'
@@ -295,7 +311,7 @@ export default function ChatBot() {
               d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"
             />
           </svg>
-          <span className="text-sm font-semibold">Bantuan</span>
+          <span className="text-sm font-semibold">{t({ ID: 'Bantuan', EN: 'Help' })}</span>
         </button>
       )}
 
@@ -326,7 +342,7 @@ export default function ChatBot() {
               <button
                 type="button"
                 onClick={handleReset}
-                title="Mulai Percakapan Baru"
+                title={t({ ID: 'Mulai Percakapan Baru', EN: 'Start a new conversation' })}
                 className="p-1.5 text-indigo-100 hover:text-white hover:bg-white/10 rounded-lg transition cursor-pointer"
               >
                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -336,7 +352,7 @@ export default function ChatBot() {
               <button
                 type="button"
                 onClick={() => setIsOpen(false)}
-                title="Tutup Chat"
+                title={t({ ID: 'Tutup Chat', EN: 'Close chat' })}
                 className="p-1.5 text-indigo-100 hover:text-white hover:bg-white/10 rounded-lg transition cursor-pointer"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -361,7 +377,15 @@ export default function ChatBot() {
                         : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
                     }`}
                   >
-                    <FormattedMessage content={m.content} />
+                    <FormattedMessage
+                      content={
+                        m.id === 'welcome'
+                          ? t(WELCOME)
+                          : m.id === 'welcome-back'
+                            ? t(WELCOME_BACK)
+                            : m.content
+                      }
+                    />
                   </div>
                 </div>
               )
@@ -380,17 +404,17 @@ export default function ChatBot() {
             {messages.length <= 2 && !isLoading && (
               <div className="pt-2">
                 <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider block mb-2">
-                  Pertanyaan Populer:
+                  {t({ ID: 'Pertanyaan Populer:', EN: 'Popular questions:' })}
                 </span>
                 <div className="flex flex-wrap gap-1.5">
                   {QUICK_PROMPTS.map((prompt, idx) => (
                     <button
                       key={idx}
                       type="button"
-                      onClick={() => handleSend(prompt)}
+                      onClick={() => handleSend(t(prompt))}
                       className="px-2.5 py-1.5 bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-100 hover:border-indigo-200 rounded-lg text-[11px] font-medium text-left transition cursor-pointer active:scale-95"
                     >
-                      {prompt}
+                      {t(prompt)}
                     </button>
                   ))}
                 </div>
@@ -412,7 +436,7 @@ export default function ChatBot() {
               type="text"
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Ketik pertanyaan seputar tiket/konser..."
+              placeholder={t({ ID: 'Ketik pertanyaan seputar tiket/konser...', EN: 'Ask about tickets/concerts...' })}
               maxLength={1000}
               disabled={isLoading}
               className="flex-1 min-w-0 bg-gray-50 border border-gray-200 rounded-xl px-3.5 py-2 text-xs text-gray-800 placeholder-gray-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition"
@@ -422,7 +446,7 @@ export default function ChatBot() {
               type="submit"
               disabled={isLoading || !input.trim()}
               className="p-2 rounded-xl bg-indigo-600 text-white disabled:opacity-40 disabled:cursor-not-allowed hover:bg-indigo-700 transition shrink-0 cursor-pointer"
-              title="Kirim Pesan"
+              title={t({ ID: 'Kirim Pesan', EN: 'Send message' })}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />

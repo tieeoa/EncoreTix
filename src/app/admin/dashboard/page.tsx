@@ -193,7 +193,7 @@ export default function AdminDashboardPage() {
         <DashboardHeader
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Search order or customer..."
+          searchPlaceholder={t({ ID: 'Cari pesanan atau pelanggan...', EN: 'Search order or customer...' })}
           userName={adminName || 'Panitia'}
           userRole="Admin Panitia"
         />

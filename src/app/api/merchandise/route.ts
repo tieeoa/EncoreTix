@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../lib/supabaseClient'
-import { MERCH_SIZES, sizeColumn, withSisaStok } from '../../lib/merchStok'
+import { MERCH_SIZES, sizeColumn, withSisaStok, FREE_SIZE_SENTINEL } from '../../lib/merchStok'
 import { resolveEventId } from '../../lib/events'
 import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
@@ -51,7 +51,11 @@ export async function POST(request: Request) {
     const eventId = await resolveEventId(supabase, body.event || null)
     const stok: Record<string, number> = {}
     for (const s of MERCH_SIZES) {
-      stok[sizeColumn(s)] = Math.max(0, Number(body[sizeColumn(s)] ?? 0))
+      const col = sizeColumn(s)
+      const val = Number(body[col] ?? 0)
+      stok[col] = col === 'stok_xxl' && val === FREE_SIZE_SENTINEL
+        ? FREE_SIZE_SENTINEL
+        : Math.max(0, val)
     }
     const foto: string[] | null = Array.isArray(body.foto) && body.foto.length > 0 ? body.foto : null
     const { data, error } = await supabase

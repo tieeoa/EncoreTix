@@ -7,7 +7,7 @@ import {
   generateKodePesanan,
   generateKodePengambilan,
 } from '../../../lib/merchGroup'
-import { resolveEventId } from '../../../lib/events'
+import { getEventById, resolveEventId } from '../../../lib/events'
 import { syncOrderWithMidtrans } from '@/app/lib/midtransSync'
 import { parseJsonObject, type PartySnapshot } from '../../../lib/orderSnapshot'
 import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
@@ -107,6 +107,13 @@ export async function POST(request: Request) {
     if (!activeEventId) {
       return NextResponse.json(
         { error: 'Belum ada event aktif. Penjualan merchandise sedang ditutup.' },
+        { status: 400 }
+      )
+    }
+    const activeEvent = await getEventById(supabase, activeEventId)
+    if (activeEvent?.status === 'paused') {
+      return NextResponse.json(
+        { error: 'Event sedang dijeda. Pemesanan merchandise sementara dinonaktifkan.' },
         { status: 400 }
       )
     }

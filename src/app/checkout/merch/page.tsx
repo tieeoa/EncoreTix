@@ -13,6 +13,7 @@ import { useLang } from '@/lib/i18n'
 import { friendlyError } from '@/app/lib/fetchError'
 import { readStoredCart, clearStoredCart } from '@/app/lib/merchCart'
 import { MERCH_CHECKOUT_FORM_KEY } from '@/app/lib/merchCheckoutDraft'
+import { FREE_SIZE, isFreeSizeProduct } from '@/app/lib/merchStok'
 import {
   EMPTY_DIGITS,
   IDENTITAS_OPTIONS,
@@ -281,6 +282,7 @@ function newLineKey() {
 
 function firstAvailableSize(product: MerchProduct | undefined): string {
   if (!product) return ''
+  if (isFreeSizeProduct(product as unknown as Record<string, unknown>)) return FREE_SIZE
   for (const s of MERCH_SIZES_ARR) {
     if ((product.sisa_stok?.[s] ?? 0) > 0) return s
   }
@@ -386,9 +388,12 @@ function MerchCheckoutContent() {
         }
         // Isi awal: dari ?id=&size=&qty= bila ada, selain itu satu baris kosong.
         const product = merchId ? aktif.find((p) => p.id === merchId) : undefined
-        const wantedSize = product && MERCH_SIZES_ARR.includes(sizeParam as (typeof MERCH_SIZES_ARR)[number])
-          ? sizeParam
-          : ''
+        const isFree = product ? isFreeSizeProduct(product as unknown as Record<string, unknown>) : false
+        const wantedSize = isFree
+          ? FREE_SIZE
+          : product && MERCH_SIZES_ARR.includes(sizeParam as (typeof MERCH_SIZES_ARR)[number])
+            ? sizeParam
+            : ''
         const fits =
           wantedSize && Number(product?.sisa_stok?.[wantedSize] ?? 0) > 0 ? wantedSize : firstAvailableSize(product)
         const initial: CartLine[] = product
@@ -441,15 +446,16 @@ function MerchCheckoutContent() {
         setError(t({ ID: `Item ke-${i + 1} tidak valid.`, EN: `Item ${i + 1} is invalid.` }))
         return
       }
-      const sisa = p.sisa_stok?.[line.ukuran] ?? 0
-      if (!line.ukuran) {
+      const ukuran = isFreeSizeProduct(p as unknown as Record<string, unknown>) ? FREE_SIZE : (line.ukuran || firstAvailableSize(p))
+      const sisa = p.sisa_stok?.[ukuran] ?? 0
+      if (!ukuran) {
         setError(t({ ID: `Item ke-${i + 1}: pilih ukuran.`, EN: `Item ${i + 1}: choose a size.` }))
         return
       }
       if (sisa <= 0 || line.jumlah > sisa) {
         setError(t({
-          ID: `Item ${p.nama_merch} (${line.ukuran}): stok tidak mencukupi (sisa ${sisa}).`,
-          EN: `Item ${p.nama_merch} (${line.ukuran}): not enough stock (left ${sisa}).`,
+          ID: `Item ${p.nama_merch}${isFreeSizeProduct(p as unknown as Record<string, unknown>) ? '' : ` (${ukuran})`}: stok tidak mencukupi (sisa ${sisa}).`,
+          EN: `Item ${p.nama_merch}${isFreeSizeProduct(p as unknown as Record<string, unknown>) ? '' : ` (${ukuran})`}: not enough stock (left ${sisa}).`,
         }))
         return
       }
@@ -478,7 +484,13 @@ function MerchCheckoutContent() {
           jenis_identitas: pemesan.jenisIdentitas,
           jenis_kelamin: pemesan.jenisKelamin,
           alamat: alamatLengkap,
-          items: lines.map((l) => ({ id_merch: l.id_merch, ukuran: l.ukuran, jumlah: l.jumlah })),
+          items: lines.map((l) => {
+            const p = products.find((prod) => prod.id === l.id_merch)
+            const ukuran = p && isFreeSizeProduct(p as unknown as Record<string, unknown>)
+              ? FREE_SIZE
+              : (l.ukuran || firstAvailableSize(p))
+            return { id_merch: l.id_merch, ukuran, jumlah: l.jumlah }
+          }),
         }),
       })
       const result = await res.json()
@@ -525,7 +537,9 @@ function MerchCheckoutContent() {
                 <div className="space-y-4">
                   {lines.map((line, i) => {
                     const product = lineProduct(line)
+                    const isFree = product ? isFreeSizeProduct(product as unknown as Record<string, unknown>) : false
                     const availableSizes = MERCH_SIZES_ARR.filter((s) => (product?.sisa_stok?.[s] ?? 0) > 0)
+                    const hideSize = isFree || (availableSizes.length > 0 && availableSizes.length <= 1)
                     return (
                       <div key={line.key} className="border border-gray-100 rounded-xl p-4 bg-gray-50/50">
                         <div className="flex items-center justify-between mb-2">
@@ -543,7 +557,7 @@ function MerchCheckoutContent() {
                         </div>
 
                         <div className="grid grid-cols-12 gap-2 items-end">
-                          <div className="col-span-12 sm:col-span-6">
+                          <div className={`col-span-12 ${hideSize ? 'sm:col-span-8' : 'sm:col-span-6'}`}>
                             <label className="block text-xs font-medium text-gray-600 mb-1.5">
                               {t({ ID: 'Produk', EN: 'Product' })} <span className="text-red-500">*</span>
                             </label>
@@ -567,22 +581,29 @@ function MerchCheckoutContent() {
                               ))}
                             </select>
                           </div>
-                          <div className="col-span-6 sm:col-span-2">
-                            <label className="block text-xs font-medium text-gray-600 mb-1.5">
-                              {t({ ID: 'Ukuran', EN: 'Size' })} <span className="text-red-500">*</span>
-                            </label>
-                            <select
-                              required
-                              value={line.ukuran}
-                              onChange={(e) => updateLine(line.key, { ukuran: e.target.value, jumlah: 1 })}
-                              className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gray-400"
-                            >
-                              <option value="" disabled>{t({ ID: 'Ukuran', EN: 'Size' })}</option>
-                              {availableSizes.map((s) => (
-                                <option key={s} value={s}>{s}</option>
-                              ))}
-                            </select>
-                          </div>
+                          {!hideSize && (
+                            <div className="col-span-6 sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-600 mb-1.5">
+                                {t({ ID: 'Ukuran', EN: 'Size' })} <span className="text-red-500">*</span>
+                              </label>
+                              <select
+                                required
+                                value={line.ukuran}
+                                onChange={(e) => updateLine(line.key, { ukuran: e.target.value, jumlah: 1 })}
+                                className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm bg-white focus:outline-none focus:border-gray-400"
+                              >
+                                <option value="" disabled>{t({ ID: 'Ukuran', EN: 'Size' })}</option>
+                                {MERCH_SIZES_ARR.map((s) => {
+                                  const sisaSize = product?.sisa_stok?.[s] ?? 0
+                                  return (
+                                    <option key={s} value={s} disabled={sisaSize <= 0}>
+                                      {s}{sisaSize <= 0 ? ` — ${t({ ID: 'Habis', EN: 'Sold out' })}` : ''}
+                                    </option>
+                                  )
+                                })}
+                              </select>
+                            </div>
+                          )}
                           <div className="col-span-6 sm:col-span-2">
                             <label className="block text-xs font-medium text-gray-600 mb-1.5">
                               {t({ ID: 'Jumlah', EN: 'Qty' })} <span className="text-red-500">*</span>
@@ -590,7 +611,7 @@ function MerchCheckoutContent() {
                             <input
                               type="number"
                               min={1}
-                              max={product?.sisa_stok?.[line.ukuran] ?? 99}
+                              max={product?.sisa_stok?.[isFree ? FREE_SIZE : (line.ukuran || firstAvailableSize(product))] ?? 99}
                               value={line.jumlah}
                               onChange={(e) =>
                                 updateLine(line.key, { jumlah: Math.max(1, Number(e.target.value) || 1) })
@@ -604,7 +625,7 @@ function MerchCheckoutContent() {
                               {formatRupiah(Number(product?.harga ?? 0) * line.jumlah)}
                             </p>
                             <p className="text-[10px] text-gray-400 mt-1">
-                              {t({ ID: 'Sisa', EN: 'Left' })}: {product?.sisa_stok?.[line.ukuran] ?? 0}
+                              {t({ ID: 'Sisa', EN: 'Left' })}: {product?.sisa_stok?.[isFree ? FREE_SIZE : (line.ukuran || firstAvailableSize(product))] ?? 0}
                             </p>
                           </div>
                         </div>

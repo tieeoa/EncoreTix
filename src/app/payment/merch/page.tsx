@@ -240,7 +240,7 @@ function MerchPaymentContent() {
     <div className="min-h-screen bg-[#f9fafc] pb-24">
       {/* Timer Banner */}
       <div suppressHydrationWarning className="sticky top-16 z-40 w-full bg-[#ccff00] py-2.5 text-center text-[13px] font-medium text-black">
-        <span suppressHydrationWarning>{mounted ? formatRemaining(remaining) : '10:00'}</span> | {t({ ID: 'Sisa waktu untuk memesan merchandise', EN: 'Time left to order merchandise' })}
+        <span suppressHydrationWarning>{mounted ? formatRemaining(remaining) : '10:00'}</span> | {t({ ID: 'Sisa waktu untuk pembayaran', EN: 'Time left to pay' })}
       </div>
 
       <div className="max-w-6xl mx-auto px-4 pt-6">

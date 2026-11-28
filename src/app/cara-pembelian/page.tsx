@@ -30,8 +30,8 @@ const STEPS = [
     label: { ID: 'Bayar', EN: 'Pay' },
     title: { ID: 'Tahap 03: Bayar', EN: 'Step 03: Pay' },
     desc: {
-      ID: 'Selesaikan pembayaran instan via QRIS (GoPay, OVO, Dana), Virtual Account bank resmi, atau Kartu Kredit dalam batas waktu 15 menit.',
-      EN: 'Complete instant payment via QRIS (GoPay, OVO, Dana), official bank Virtual Account, or Credit Card within 15 minutes.',
+      ID: 'Selesaikan pembayaran instan via QRIS (GoPay, OVO, Dana), Virtual Account bank resmi, atau Kartu Kredit dalam batas waktu 10 menit.',
+      EN: 'Complete instant payment via QRIS (GoPay, OVO, Dana), official bank Virtual Account, or Credit Card within 10 minutes.',
     },
   },
   {
@@ -73,12 +73,12 @@ const CEK_STEPS = [
     content: {
       ID: (
         <div className="bg-[#f3f6fc] rounded-xl p-3 sm:p-4 text-xs sm:text-sm text-gray-600 leading-relaxed">
-          <span className="font-bold text-[#4f46e5]">88219800</span> atau nomor invoice transaksi. Kode ini adalah identitas resmi kepemilikan tiketmu.
+          <span className="font-bold text-[#4f46e5]">ETX-XXXXXX</span> atau nomor invoice transaksi. Kode ini adalah identitas resmi kepemilikan tiketmu.
         </div>
       ),
       EN: (
         <div className="bg-[#f3f6fc] rounded-xl p-3 sm:p-4 text-xs sm:text-sm text-gray-600 leading-relaxed">
-          <span className="font-bold text-[#4f46e5]">88219800</span> or the transaction invoice number. This code is the official identity of your ticket ownership.
+          <span className="font-bold text-[#4f46e5]">ETX-XXXXXX</span> or the transaction invoice number. This code is the official identity of your ticket ownership.
         </div>
       ),
     },

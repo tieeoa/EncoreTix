@@ -141,7 +141,7 @@ export default function SuperAdminDashboardPage() {
         <DashboardHeader
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Search dashboard..."
+          searchPlaceholder={t({ ID: 'Cari di dashboard...', EN: 'Search dashboard...' })}
           userName={adminName || 'Super Admin'}
           userRole="Super Admin"
         />

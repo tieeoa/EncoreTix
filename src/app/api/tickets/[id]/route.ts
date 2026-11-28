@@ -5,6 +5,10 @@ import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
 
+const TICKET_HAS_ORDERS_MESSAGE =
+  'Tiket tidak dapat dihapus karena sudah ada pesanan yang memakai tiket ini. Nonaktifkan tiket ini saja agar tidak bisa dipesan lagi.'
+
+
 // GET /api/tickets/:id
 export async function GET(
   _request: Request,
@@ -88,11 +92,24 @@ export async function DELETE(
     if (ro) return ro
     const { id } = await params
     const supabase = getServerSupabase()
+    const { data: orders, error: orderError } = await supabase
+      .from('pesanan_tiket')
+      .select('id')
+      .eq('id_tiket', id)
+      .limit(1)
+    if (orderError) throw new Error(orderError.message)
+    if (orders && orders.length > 0) {
+      return NextResponse.json({ error: TICKET_HAS_ORDERS_MESSAGE }, { status: 400 })
+    }
+
     const { error } = await supabase.from('tiket').delete().eq('id', id)
     if (error) throw new Error(error.message)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
+    const rawMessage = err instanceof Error ? err.message : 'Terjadi kesalahan'
+    const message = /foreign key|constraint|23503/i.test(rawMessage)
+      ? TICKET_HAS_ORDERS_MESSAGE
+      : rawMessage
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

@@ -197,7 +197,7 @@ export default function SuperAdminReportsPage() {
         <DashboardHeader
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Search reports..."
+          searchPlaceholder={t({ ID: 'Cari laporan...', EN: 'Search reports...' })}
           userName={adminName || 'Super Admin'}
           userRole="Super Admin"
         />

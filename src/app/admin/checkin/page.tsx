@@ -327,7 +327,7 @@ export default function AdminCheckinPage() {
         <DashboardHeader
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Search check-in..."
+          searchPlaceholder={t({ ID: 'Cari check-in...', EN: 'Search check-in...' })}
           userName={adminName || 'Panitia'}
           userRole="Gate Operations"
         />

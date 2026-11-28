@@ -42,7 +42,7 @@ function formatRupiah(n: number) {
 }
 
 // Kartu produk merch. Animasi masuk via .merch-card-enter + delay bertingkat.
-function MerchCard({ p, delay, onBuy }: { p: MerchItem; delay: number; onBuy?: (p: MerchItem) => void }) {
+function MerchCard({ p, delay, onBuy, paused = false }: { p: MerchItem; delay: number; onBuy?: (p: MerchItem) => void; paused?: boolean }) {
   const { t } = useLang()
   const inactive = p.status === 'nonaktif'
   const isFree = isFreeSizeProduct(p as unknown as Record<string, unknown>)
@@ -94,7 +94,7 @@ function MerchCard({ p, delay, onBuy }: { p: MerchItem; delay: number; onBuy?: (
               e.stopPropagation()
               onBuy?.(p)
             }}
-            disabled={inactive || soldOut}
+            disabled={inactive || soldOut || paused}
             title={t({ ID: 'Masukkan Keranjang', EN: 'Add to Cart' })}
             aria-label={t({ ID: 'Masukkan Keranjang', EN: 'Add to Cart' })}
             className="w-8 h-8 inline-flex items-center justify-center rounded-full bg-indigo-600 text-white hover:bg-indigo-500 active:scale-95 transition-all disabled:bg-gray-200 disabled:text-gray-400 disabled:active:scale-100 cursor-pointer"
@@ -119,6 +119,7 @@ function MerchandisePageContent() {
   const [bands, setBands] = useState<Band[]>([])
   const [eventName, setEventName] = useState('')
   const [noActiveEvent, setNoActiveEvent] = useState(false)
+  const [paused, setPaused] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [activeCategory, setActiveCategory] = useState('Semua')
@@ -138,6 +139,7 @@ function MerchandisePageContent() {
         setBands((bandRes.data || []) as Band[])
         if (eventRes?.data?.nama_event) setEventName(eventRes.data.nama_event)
         setNoActiveEvent(!eventRes?.data?.id)
+        setPaused(eventRes?.data?.status === 'paused')
       })
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
@@ -171,6 +173,7 @@ function MerchandisePageContent() {
   }
 
   const handleBuy = (p: MerchItem) => {
+    if (paused) return
     const isFree = isFreeSizeProduct(p as unknown as Record<string, unknown>)
     const size = isFree ? FREE_SIZE : MERCH_SIZES.find((s) => (p.sisa_stok?.[s] ?? 0) > 0)
     if (!size) return
@@ -216,6 +219,13 @@ function MerchandisePageContent() {
           <p className="text-sm text-gray-400 mt-1">{t({ ID: 'Pengambilan merch dilakukan mulai dari jam pemesanan hingga maksimal 1 hari setelahnya', EN: 'Merchandise pickup is available from order time up to at most 1 day after' })}</p>
         </div>
       </div>
+
+      {paused && (
+        <div className="mt-4 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+          <p className="text-sm font-semibold text-amber-800">{t({ ID: 'Event ini masih dijeda sebentar', EN: 'This event is temporarily paused' })}</p>
+          <p className="text-xs text-amber-700/80 mt-0.5">{t({ ID: 'Pemesanan merchandise belum dibuka. Cek kembali sebentar lagi ya.', EN: 'Merchandise ordering is not open yet. Please check back shortly.' })}</p>
+        </div>
+      )}
 
       <div className="lg:flex lg:gap-6 lg:items-start mt-8">
 
@@ -268,7 +278,7 @@ function MerchandisePageContent() {
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
                     {sec.items.map(({ p, delay }) => (
-                      <MerchCard key={p.id} p={p} delay={delay} onBuy={handleBuy} />
+                      <MerchCard key={p.id} p={p} delay={delay} onBuy={handleBuy} paused={paused} />
                     ))}
                   </div>
                 </section>

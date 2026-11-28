@@ -1,10 +1,14 @@
 ﻿import { NextResponse } from 'next/server'
 import { getServerSupabase } from '../../../lib/supabaseClient'
 import { getEventById, formatEventDisplay } from '../../../lib/events'
-import { MERCH_SIZES, sizeColumn, withSisaStok } from '../../../lib/merchStok'
+import { MERCH_SIZES, sizeColumn, withSisaStok, FREE_SIZE_SENTINEL } from '../../../lib/merchStok'
 import { requireRole, rejectInactiveAdminMutation } from '@/lib/serverAuth'
 
 export const dynamic = 'force-dynamic'
+
+const MERCH_HAS_ORDERS_MESSAGE =
+  'Merchandise tidak dapat dihapus karena sudah ada pesanan yang memakai produk ini. Simpan produk ini agar riwayat pesanan tetap valid.'
+
 
 // GET /api/merchandise/:id
 // Mengambil detail satu produk merch.
@@ -57,7 +61,10 @@ export async function PATCH(
     for (const s of MERCH_SIZES) {
       const col = sizeColumn(s)
       if (body[col] !== undefined) {
-        body[col] = Math.max(0, Math.round(Number(body[col]) || 0))
+        const val = Math.round(Number(body[col]) || 0)
+        body[col] = col === 'stok_xxl' && val === FREE_SIZE_SENTINEL
+          ? FREE_SIZE_SENTINEL
+          : Math.max(0, val)
       }
     }
 
@@ -87,11 +94,24 @@ export async function DELETE(
     if (ro) return ro
     const { id } = await params
     const supabase = getServerSupabase()
+    const { data: orders, error: orderError } = await supabase
+      .from('pesanan_merchandise')
+      .select('id')
+      .eq('id_merch', id)
+      .limit(1)
+    if (orderError) throw new Error(orderError.message)
+    if (orders && orders.length > 0) {
+      return NextResponse.json({ error: MERCH_HAS_ORDERS_MESSAGE }, { status: 400 })
+    }
+
     const { error } = await supabase.from('merchandise').delete().eq('id', id)
     if (error) throw new Error(error.message)
     return NextResponse.json({ ok: true })
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Terjadi kesalahan'
+    const rawMessage = err instanceof Error ? err.message : 'Terjadi kesalahan'
+    const message = /foreign key|constraint|23503/i.test(rawMessage)
+      ? MERCH_HAS_ORDERS_MESSAGE
+      : rawMessage
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

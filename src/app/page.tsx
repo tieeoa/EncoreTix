@@ -200,6 +200,7 @@ export default function Home() {
   }
 
   const noEventText = t({ ID: 'Belum ada event yang berlangsung', EN: 'No ongoing event' })
+  const eventPaused = event?.status === 'paused'
   const heroTitle = event?.nama_event || t({ ID: 'Event Segera Diumumkan', EN: 'Upcoming Event Announcement' })
   const heroSubtitle = event
     ? [event.tanggal ? formatTanggal(event.tanggal) : '', eventLokasi(event), eventJam(event)]
@@ -259,7 +260,11 @@ export default function Home() {
         <div className="relative mt-auto w-full p-5 sm:p-6 md:p-8">
           <div className="max-w-xl">
             {/* Badge status */}
-            {event && salesClosed ? (
+            {eventPaused ? (
+              <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-amber-200 bg-amber-400/15 backdrop-blur-md border border-amber-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
+                {t({ ID: 'Event Dijeda Sebentar', EN: 'Event Temporarily Paused' })}
+              </span>
+            ) : event && salesClosed ? (
               <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-amber-200 bg-amber-400/15 backdrop-blur-md border border-amber-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
                 {t({ ID: 'Penjualan Ditutup', EN: 'Sales Closed' })}
               </span>
@@ -275,6 +280,12 @@ export default function Home() {
               <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-amber-200 bg-amber-400/15 backdrop-blur-md border border-amber-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
                 {t({ ID: 'Segera Diumumkan', EN: 'Coming Soon' })}
               </span>
+            )}
+
+            {eventPaused && (
+              <p className="mb-2 text-[11px] leading-snug text-amber-100/90 drop-shadow">
+                {t({ ID: 'Event ini masih dijeda sebentar. Pemesanan belum dibuka.', EN: 'This event is temporarily paused. Ticketing is not open yet.' })}
+              </p>
             )}
 
             <h1 className={`${bebasNeue.className} text-3xl sm:text-4xl md:text-5xl lg:text-6xl text-white tracking-wide leading-none drop-shadow-lg break-words`}>
@@ -320,12 +331,14 @@ export default function Home() {
             {/* CTA */}
             {event && (
               <div className="hidden sm:flex flex-wrap items-center gap-2.5 mt-4">
-                {salesClosed ? (
+                {eventPaused || salesClosed ? (
                   <Link
                     href="/tiket"
                     className="inline-flex items-center gap-2 bg-white/10 border border-white/30 text-white text-[13px] font-semibold px-5 py-2.5 rounded-full transition-all hover:bg-white/15"
                   >
-                    {t({ ID: 'Penjualan Tiket Ditutup', EN: 'Ticket Sales Closed' })}
+                    {eventPaused
+                      ? t({ ID: 'Lihat Tiket (Dijeda)', EN: 'View Tickets (Paused)' })
+                      : t({ ID: 'Penjualan Tiket Ditutup', EN: 'Ticket Sales Closed' })}
                   </Link>
                 ) : (
                   <Link
@@ -653,14 +666,20 @@ export default function Home() {
       {/* Sticky bottom CTA bar — hanya di HP */}
       {event && (
         <StickyBottomBar
-          label={salesClosed ? t({ ID: 'Penjualan ditutup', EN: 'Sales closed' }) : t({ ID: 'Mulai dari', EN: 'Starting from' })}
-          value={salesClosed ? '-' : minTicketPrice == null ? 'Rp ...' : 'Rp ' + minTicketPrice.toLocaleString('id-ID')}
+          label={eventPaused
+            ? t({ ID: 'Event dijeda sebentar', EN: 'Event temporarily paused' })
+            : salesClosed
+              ? t({ ID: 'Penjualan ditutup', EN: 'Sales closed' })
+              : t({ ID: 'Mulai dari', EN: 'Starting from' })}
+          value={eventPaused || salesClosed ? '-' : minTicketPrice == null ? 'Rp ...' : 'Rp ' + minTicketPrice.toLocaleString('id-ID')}
         >
           <Link
             href="/tiket"
             className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-bold px-6 py-3 rounded-full shadow-md shadow-indigo-950/20"
           >
-            {salesClosed ? t({ ID: 'Lihat Tiket', EN: 'View Tickets' }) : t({ ID: 'Beli Tiket', EN: 'Buy Ticket' })}
+            {eventPaused || salesClosed
+              ? t({ ID: 'Lihat Tiket', EN: 'View Tickets' })
+              : t({ ID: 'Beli Tiket', EN: 'Buy Ticket' })}
             <span aria-hidden>→</span>
           </Link>
         </StickyBottomBar>

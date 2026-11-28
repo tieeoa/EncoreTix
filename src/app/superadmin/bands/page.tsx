@@ -175,7 +175,7 @@ export default function SuperAdminBandsPage() {
       <SuperAdminSidebar />
       <div className="flex-1 flex flex-col min-w-0">
         <DashboardHeader
-          searchPlaceholder="Search bands..."
+          searchPlaceholder={t({ ID: 'Cari band...', EN: 'Search bands...' })}
           userName={adminName || 'Super Admin'}
           userRole="Super Admin"
         />

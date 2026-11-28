@@ -30,6 +30,10 @@ export function isEventFinished(e: { status?: string | null; tanggal?: string | 
   return !!e.tanggal && todayISO() > e.tanggal
 }
 
+export function isEventPaused(e: { status?: string | null }): boolean {
+  return e.status === 'paused'
+}
+
 // Otomatis tutup event yang tanggalnya sudah lewat (status -> 'closed').
 // Idempotent: hanya menulis bila ada yang perlu ditutup, dan tidak melempar
 // error (return [] bila gagal) supaya tidak menggagalkan request baca.
@@ -74,19 +78,23 @@ export async function getEventById(supabase: SupabaseClient, id: string): Promis
 }
 
 // Event yang sedang berjalan/aktif di web.
-// Event yang ditutup manual oleh superadmin tetap tampil sampai tanggalnya lewat
-// (penjualannya sudah ditutup lewat isTicketSalesClosed), agar pembeli tidak
-// mengira tidak ada event. Setelah tanggal lewat, baru tidak ada event aktif.
+// Event yang dijeda tetap tampil normal (penjualan dinonaktifkan lewat
+// isTicketSalesClosed), begitu juga event yang ditutup manual sampai tanggalnya
+// lewat. Setelah tanggal lewat, baru tidak ada event aktif.
 export async function getActiveEvent(supabase: SupabaseClient): Promise<EventInfo | null> {
   const all = await getAllEvents(supabase)
   const justClosed = new Set((await autoClosePastEvents(supabase, all)).map((e) => e.id))
   const candidates = all.filter(
     (e) =>
-      (e.status === 'active' || e.status === 'closed') &&
+      (e.status === 'active' || e.status === 'paused' || e.status === 'closed') &&
       !justClosed.has(e.id) &&
       (!e.tanggal || e.tanggal >= todayISO())
   )
-  return candidates.find((e) => e.status === 'active') ?? candidates[0] ?? null
+  const pick = (status: string) =>
+    candidates
+      .filter((e) => e.status === status)
+      .sort((a, b) => (b.updated_at || '').localeCompare(a.updated_at || ''))[0]
+  return pick('active') ?? pick('paused') ?? candidates[0] ?? null
 }
 
 // Pastikan hanya event `keepId` yang berstatus 'active'; sisanya di-'paused'.

@@ -40,6 +40,8 @@ interface Band {
 interface MerchOrder {
   id_merch: string
   jumlah: number
+  ukuran: string
+  total_harga: number
   status_bayar: string
   merchandise: { harga: number } | null
 }
@@ -65,10 +67,10 @@ type SortKey = 'nama' | 'band' | 'harga' | 'stok_total' | 'terjual' | 'revenue'
 
 function formatRupiah(n: number) { return 'Rp ' + n.toLocaleString('id-ID') }
 
-function SortTh({ label, k, sortKey, sortDir, onSort }: { label: string; k: SortKey; sortKey: SortKey; sortDir: 'asc' | 'desc'; onSort: (k: SortKey) => void }) {
+function SortTh({ label, k, sortKey, sortDir, onSort, hint, className = '' }: { label: string; k: SortKey; sortKey: SortKey; sortDir: 'asc' | 'desc'; onSort: (k: SortKey) => void; hint?: string; className?: string }) {
   const active = sortKey === k
   return (
-    <th className="px-5 py-3 text-xs font-medium text-gray-400">
+    <th className={`px-3 py-3 text-xs font-medium text-gray-400 ${className}`}>
       <button
         onClick={() => onSort(k)}
         className={`inline-flex items-center gap-1 hover:text-slate-700 transition-colors ${active ? 'text-blue-600' : ''}`}
@@ -76,6 +78,7 @@ function SortTh({ label, k, sortKey, sortDir, onSort }: { label: string; k: Sort
         {label}
         <span className="text-[9px]">{active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}</span>
       </button>
+      {hint && <span className="block text-[9px] font-normal normal-case tracking-normal text-slate-400 mt-0.5">{hint}</span>}
     </th>
   )
 }
@@ -143,13 +146,25 @@ export default function SuperAdminMerchandisePage() {
   const terjualFor = (id: string) =>
     orders.filter((o) => o.id_merch === id && o.status_bayar === 'berhasil').reduce((s, o) => s + o.jumlah, 0)
 
-  const totalRevenue = products.reduce((sum, p) => sum + Number(p.harga) * terjualFor(p.id), 0)
+  const terjualUkuranFor = (id: string, ukuran: string) =>
+    orders
+      .filter((o) => o.id_merch === id && o.status_bayar === 'berhasil' && o.ukuran === ukuran)
+      .reduce((s, o) => s + Number(o.jumlah ?? 0), 0)
+
+  const revenueFor = (id: string) =>
+    orders
+      .filter((o) => o.id_merch === id && o.status_bayar === 'berhasil')
+      .reduce((s, o) => s + Number(o.total_harga ?? 0), 0)
+
+  const totalRevenue = products.reduce((sum, p) => sum + revenueFor(p.id), 0)
   const totalTerjual = products.reduce((sum, p) => sum + terjualFor(p.id), 0)
 
   const productRows = products.map((p) => {
     const terjual = terjualFor(p.id)
-    const stokTotal = MERCH_SIZES.reduce((acc, s) => acc + Number((p as unknown as Record<string, number>)[sizeColumn(s)] ?? 0), 0)
-    return { ...p, terjual, stokTotal, revenue: Number(p.harga) * terjual }
+    const stokTotal = isFreeSizeProduct(p as unknown as Record<string, unknown>)
+      ? Number(p.stok_s ?? 0)
+      : MERCH_SIZES.reduce((acc, s) => acc + Number((p as unknown as Record<string, number>)[sizeColumn(s)] ?? 0), 0)
+    return { ...p, terjual, stokTotal, revenue: revenueFor(p.id) }
   })
 
   const salesClosed = products.length > 0 && products.every((p) => p.status === 'nonaktif')
@@ -426,7 +441,7 @@ export default function SuperAdminMerchandisePage() {
         <DashboardHeader
           searchValue={search}
           onSearchChange={(v) => { setSearch(v); setPage(1) }}
-          searchPlaceholder="Search product, category, or band..."
+          searchPlaceholder={t({ ID: 'Cari produk, kategori, atau band...', EN: 'Search product, category, or band...' })}
           userName={adminName || 'Super Admin'}
           userRole="Super Admin"
         />
@@ -606,9 +621,9 @@ export default function SuperAdminMerchandisePage() {
           {/* 3 Stats */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-5 mb-8">
             {[
-              { label: t({ ID: 'Total Produk', EN: 'Total Products' }), value: products.length, icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z', color: 'bg-blue-50 text-blue-600' },
-              { label: t({ ID: 'Total Terjual', EN: 'Total Sold' }), value: totalTerjual.toLocaleString('id-ID'), icon: 'M5 8h14l-1.5 12H6.5L5 8zM9 8V6a3 3 0 016 0v2', color: 'bg-amber-50 text-amber-600' },
-              { label: t({ ID: 'Revenue Merch', EN: 'Merch Revenue' }), value: formatRupiah(totalRevenue), icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1', color: 'bg-emerald-50 text-emerald-600' },
+              { label: t({ ID: 'Total Produk', EN: 'Total Products' }), value: products.length, note: '', icon: 'M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z', color: 'bg-blue-50 text-blue-600' },
+              { label: t({ ID: 'Total Terjual', EN: 'Total Sold' }), value: totalTerjual.toLocaleString('id-ID'), note: '', icon: 'M5 8h14l-1.5 12H6.5L5 8zM9 8V6a3 3 0 016 0v2', color: 'bg-amber-50 text-amber-600' },
+              { label: t({ ID: 'Pendapatan Merch', EN: 'Merch Revenue' }), value: formatRupiah(totalRevenue), note: t({ ID: 'Nominal dibayar, termasuk biaya admin 4%', EN: 'Amount paid, including 4% admin fee' }), icon: 'M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1', color: 'bg-emerald-50 text-emerald-600' },
             ].map((s) => (
               <div key={s.label} className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-sm hover:border-blue-200 hover:shadow-md hover:shadow-blue-900/[0.06] hover:-translate-y-0.5 transition-all duration-200">
                 <div className="flex items-center justify-between mb-2">
@@ -620,6 +635,7 @@ export default function SuperAdminMerchandisePage() {
                   </span>
                 </div>
                 <p className="text-2xl md:text-3xl font-bold text-slate-900">{s.value}</p>
+                {s.note && <p className="text-[10px] text-slate-400 mt-1">{s.note}</p>}
               </div>
             ))}
           </div>
@@ -635,6 +651,9 @@ export default function SuperAdminMerchandisePage() {
                 <option key={k} value={k}>{k}</option>
               ))}
             </select>
+            <p className="text-[11px] text-slate-400 sm:self-center">
+              {t({ ID: 'Angka merah = stok yang sudah berkurang.', EN: 'Red number = stock already reduced.' })}
+            </p>
           </div>
 
           <div className="bg-white border border-slate-200/90 rounded-2xl shadow-sm overflow-hidden">
@@ -642,14 +661,22 @@ export default function SuperAdminMerchandisePage() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-slate-50/70 border-b border-slate-200/80 text-xs font-semibold text-slate-500 uppercase tracking-wider">
-                    <th className="w-10 px-5 py-3.5 text-xs font-semibold text-slate-500">#</th>
-                    <SortTh label={t({ ID: 'Produk', EN: 'Product' })} k="nama" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortTh label={t({ ID: 'Band', EN: 'Band' })} k="band" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortTh label={t({ ID: 'Harga', EN: 'Price' })} k="harga" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortTh label={t({ ID: 'Stok per Ukuran', EN: 'Stock per Size' })} k="stok_total" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortTh label={t({ ID: 'Terjual', EN: 'Sold' })} k="terjual" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <SortTh label={t({ ID: 'Revenue', EN: 'Revenue' })} k="revenue" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
-                    <th className="px-5 py-3.5 text-xs font-semibold text-slate-500">{t({ ID: 'Aksi', EN: 'Actions' })}</th>
+                    <th className="w-12 px-3 py-3.5 text-xs font-semibold text-slate-500">#</th>
+                    <SortTh label={t({ ID: 'Produk', EN: 'Product' })} className="min-w-[180px]" k="nama" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortTh label={t({ ID: 'Band', EN: 'Band' })} className="min-w-[90px]" k="band" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortTh label={t({ ID: 'Harga', EN: 'Price' })} className="whitespace-nowrap" k="harga" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortTh label={t({ ID: 'Stok per Ukuran', EN: 'Stock per Size' })} className="min-w-[230px]" k="stok_total" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortTh label={t({ ID: 'Terjual', EN: 'Sold' })} className="whitespace-nowrap" k="terjual" sortKey={sortKey} sortDir={sortDir} onSort={toggleSort} />
+                    <SortTh
+                      label={t({ ID: 'Pendapatan', EN: 'Revenue' })}
+                      hint={t({ ID: 'termasuk biaya admin 4%', EN: 'incl. 4% admin fee' })}
+                      className="min-w-[120px]"
+                      k="revenue"
+                      sortKey={sortKey}
+                      sortDir={sortDir}
+                      onSort={toggleSort}
+                    />
+                    <th className="px-3 py-3.5 text-xs font-semibold text-slate-500 whitespace-nowrap">{t({ ID: 'Aksi', EN: 'Actions' })}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -662,9 +689,9 @@ export default function SuperAdminMerchandisePage() {
                     const pjml = pfotos.length
                     return (
                       <tr key={p.id} className="hover:bg-slate-50/70 transition-colors">
-                        <td className="px-5 py-4 text-slate-400 text-xs">{startIndex + i + 1}</td>
-                        <td className="px-5 py-4">
-                          <div className="flex items-center gap-3">
+                        <td className="px-3 py-3.5 text-slate-400 text-xs">{startIndex + i + 1}</td>
+                        <td className="px-3 py-3.5 min-w-[180px]">
+                          <div className="flex items-center gap-2 min-w-0">
                             {pfotos.length > 0 ? (
                               <div className="shrink-0 relative">
                                 {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -680,26 +707,29 @@ export default function SuperAdminMerchandisePage() {
                                 </svg>
                               </span>
                             )}
-                            <div>
-                              <p className="text-sm font-semibold text-slate-900 flex items-center gap-2">
-                                {p.nama_merch}
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-sm font-semibold text-slate-900 truncate" title={p.nama_merch}>{p.nama_merch}</span>
                                 {p.status === 'nonaktif' && (
-                                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                                  <span className="shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
                                     {t({ ID: 'Nonaktif', EN: 'Inactive' })}
                                   </span>
                                 )}
-                              </p>
-                              <p className="text-xs text-slate-500">{p.kategori || '-'}</p>
+                              </div>
+                              <p className="text-xs text-slate-500 truncate" title={p.kategori || ''}>{p.kategori || '-'}</p>
                             </div>
                           </div>
                         </td>
-                        <td className="px-5 py-4 text-slate-600 text-xs">{p.band?.nama_band || '-'}</td>
-                        <td className="px-5 py-4 text-slate-900 font-semibold">{formatRupiah(Number(p.harga))}</td>
-                        <td className="px-5 py-4">
+                        <td className="px-3 py-3.5 min-w-[90px]">
+                          <span className="block text-slate-600 text-xs truncate" title={p.band?.nama_band || ''}>{p.band?.nama_band || '-'}</span>
+                        </td>
+                        <td className="px-3 py-3.5 text-slate-900 font-semibold whitespace-nowrap">{formatRupiah(Number(p.harga))}</td>
+                        <td className="px-3 py-3.5 min-w-[230px]">
                           {isFreeSizeProduct(p as unknown as Record<string, unknown>) ? (
                             <SizeStockCell
                               label={t({ ID: 'Stok', EN: 'Stock' })}
                               value={Number(p.stok_s ?? 0)}
+                              terjual={terjualUkuranFor(p.id, FREE_SIZE)}
                               disabled={readOnly}
                               onSave={(v) => handleUpdateStok(p, 'stok_s', v)}
                             />
@@ -710,6 +740,7 @@ export default function SuperAdminMerchandisePage() {
                                   key={s}
                                   label={s}
                                   value={Number(p[sizeColumn(s)] ?? 0)}
+                                  terjual={terjualUkuranFor(p.id, s)}
                                   disabled={readOnly}
                                   onSave={(v) => handleUpdateStok(p, sizeColumn(s) as 'stok_s' | 'stok_m' | 'stok_l' | 'stok_xl' | 'stok_xxl', v)}
                                 />
@@ -717,9 +748,9 @@ export default function SuperAdminMerchandisePage() {
                             </div>
                           )}
                         </td>
-                        <td className="px-5 py-4 text-slate-600">{terjual}</td>
-                        <td className="px-5 py-4 font-bold text-blue-600">{formatRupiah(Number(p.harga) * terjual)}</td>
-                        <td className="px-5 py-4">
+                        <td className="px-3 py-3.5 text-slate-600">{terjual}</td>
+                        <td className="px-3 py-3.5 font-bold text-blue-600 whitespace-nowrap">{formatRupiah(p.revenue)}</td>
+                        <td className="px-3 py-3.5 whitespace-nowrap">
                           {readOnly ? (
                             <span className="text-xs text-slate-300">-</span>
                           ) : (
@@ -786,47 +817,56 @@ export default function SuperAdminMerchandisePage() {
   )
 }
 
-function SizeStockCell({ label, value, onSave, disabled }: { label: string; value: number; onSave: (v: string) => void; disabled?: boolean }) {
+function SizeStockCell({ label, value, terjual = 0, onSave, disabled }: { label: string; value: number; terjual?: number; onSave: (v: string) => void; disabled?: boolean }) {
   const [edit, setEdit] = useState(false)
   const [val, setVal] = useState(String(value))
+  const sisa = Math.max(0, value - terjual)
+  const title = `${label} — stok awal: ${value}, berkurang: ${terjual}, sisa: ${sisa}`
+  const color = sisa === 0 ? 'text-rose-600' : sisa < 20 ? 'text-amber-600' : 'text-slate-800'
+
+  const content = (
+    <>
+      <span className="text-[9px] font-semibold text-slate-400 leading-none">{label}</span>
+      <span className="flex items-baseline justify-center gap-0.5 leading-none">
+        <span className={`text-[10px] font-bold ${color}`}>{value}</span>
+        {terjual > 0 && <span className="text-[8px] font-semibold text-rose-500">−{terjual}</span>}
+      </span>
+    </>
+  )
 
   if (disabled) {
-    const dcolor = value === 0 ? 'text-rose-600' : value < 20 ? 'text-amber-600' : 'text-slate-800'
     return (
       <span
-        title={`${label}: ${value}`}
-        className="flex flex-col items-center justify-center w-11 h-10 rounded-lg border border-slate-200 bg-slate-50 cursor-default"
+        title={title}
+        className="flex flex-col items-center justify-center gap-0.5 w-[44px] h-9 rounded-lg border border-slate-200 bg-slate-50 cursor-default"
       >
-        <span className="text-[9px] font-semibold text-slate-400 leading-none">{label}</span>
-        <span className={`text-xs font-bold leading-none mt-0.5 ${dcolor}`}>{value}</span>
+        {content}
       </span>
     )
   }
 
   if (edit) {
     return (
-      <div className="flex items-center gap-1 w-14 h-10 rounded-lg bg-white border border-blue-500 px-1.5 shadow-sm">
+      <div className="flex items-center gap-0.5 w-[88px] h-9 rounded-lg bg-white border border-blue-500 px-1 shadow-sm">
         <input
           type="number"
           value={val}
           onChange={(e) => setVal(e.target.value)}
           autoFocus
-          className="w-7 bg-transparent text-xs text-slate-900 focus:outline-none"
+          className="w-8 bg-transparent text-xs text-slate-900 focus:outline-none"
         />
         <button onClick={() => { onSave(val); setEdit(false) }} className="text-[10px] text-emerald-600 hover:text-emerald-700 font-bold">✓</button>
         <button onClick={() => { setEdit(false); setVal(String(value)) }} className="text-[10px] text-slate-400 hover:text-slate-600">✗</button>
       </div>
     )
   }
-  const color = value === 0 ? 'text-rose-600' : value < 20 ? 'text-amber-600' : 'text-slate-800'
   return (
     <button
       onClick={() => { setVal(String(value)); setEdit(true) }}
-      title={`${label}: ${value}`}
-      className={`flex flex-col items-center justify-center w-11 h-10 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-blue-400 transition-colors cursor-pointer ${value === 0 ? 'opacity-60' : ''}`}
+      title={title}
+      className={`flex flex-col items-center justify-center gap-0.5 w-[44px] h-9 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 hover:border-blue-400 transition-colors cursor-pointer ${sisa === 0 ? 'opacity-60' : ''}`}
     >
-      <span className="text-[9px] font-semibold text-slate-400 leading-none">{label}</span>
-      <span className={`text-xs font-bold leading-none mt-0.5 ${color}`}>{value}</span>
+      {content}
     </button>
   )
 }

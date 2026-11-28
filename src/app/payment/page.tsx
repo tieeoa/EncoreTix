@@ -254,7 +254,7 @@ function PaymentContent({ adminMode = false }: { adminMode?: boolean } = {}) {
       {/* Timer Banner */}
       {!adminMode && (
         <div suppressHydrationWarning className="sticky top-16 z-40 w-full bg-[#ccff00] py-2.5 text-center text-[13px] font-medium text-black">
-          <span suppressHydrationWarning>{mounted ? formatRemaining(remaining) : '10:00'}</span> | {t({ ID: 'Sisa waktu untuk memesan tiket', EN: 'Time left to book your ticket' })}
+          <span suppressHydrationWarning>{mounted ? formatRemaining(remaining) : '10:00'}</span> | {t({ ID: 'Sisa waktu untuk pembayaran', EN: 'Time left to pay' })}
         </div>
       )}
 

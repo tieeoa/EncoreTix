@@ -356,6 +356,7 @@ export default function TentangEventDetailPage() {
   // Di web, event yang ditutup manual tetap tampil normal dengan penjualan ditutup.
   // Yang benar-benar "selesai" hanya setelah tanggalnya lewat.
   const isFinished = !!event.tanggal && new Date(`${event.tanggal}T00:00:00`).getTime() < nowMs
+  const eventPaused = event?.status === 'paused'
 
   return (
     <div className="bg-white min-h-screen">
@@ -580,7 +581,9 @@ export default function TentangEventDetailPage() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-300 opacity-75" />
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-300" />
               </span>
-              {isFinished
+              {eventPaused
+                ? t({ ID: 'Event Dijeda Sebentar', EN: 'Event Temporarily Paused' })
+                : isFinished
                 ? t({ ID: 'Edisi ini telah selesai & tersimpan', EN: 'This edition has finished & is archived' })
                 : salesClosed
                   ? t({ ID: 'Penjualan Tiket Ditutup', EN: 'Ticket Sales Closed' })
@@ -597,6 +600,12 @@ export default function TentangEventDetailPage() {
                 : t({ ID: 'Musik Terbesar Tahun Ini', EN: 'Biggest Music of the Year' })}
             </h2>
 
+            {eventPaused && (
+              <p className="text-amber-100 text-sm mb-4 max-w-2xl">
+                {t({ ID: 'Event ini masih dijeda sebentar. Pemesanan belum dibuka.', EN: 'This event is temporarily paused. Ticketing is not open yet.' })}
+              </p>
+            )}
+
             <p className="text-blue-100 text-sm mb-10 max-w-2xl leading-[1.8]">
               {isFinished
                 ? t({ ID: 'Semua data penjualan tiket dan merchandise edisi ini telah dikunci permanen. Terima kasih atas dukungannya, sampai jumpa di edisi berikutnya!', EN: 'All ticket & merchandise data for this edition has been permanently locked. Thank you for your support — see you at the next edition!' })
@@ -608,7 +617,7 @@ export default function TentangEventDetailPage() {
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
                 {isFinished
                   ? t({ ID: 'Kembali ke Beranda', EN: 'Back to Home' })
-                  : salesClosed
+                  : eventPaused || salesClosed
                     ? t({ ID: 'Lihat Tiket', EN: 'View Tickets' })
                     : t({ ID: 'Beli Tiket Sekarang', EN: 'Buy Tickets Now' })}
               </Link>

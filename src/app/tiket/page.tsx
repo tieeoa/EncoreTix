@@ -30,6 +30,7 @@ export default function TicketListPage() {
   const { t } = useLang()
   const [tickets, setTickets] = useState<TicketItem[]>([])
   const [salesClosed, setSalesClosed] = useState(false)
+  const [paused, setPaused] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [qty, setQty] = useState<Record<string, number>>({})
@@ -49,12 +50,14 @@ export default function TicketListPage() {
         if (res.error) throw new Error(res.error)
         setTickets(res.data || [])
         setSalesClosed(!!res.sales_closed)
+        setPaused(!!res.paused)
       })
       .catch((e) => setError(friendlyError(e)))
       .finally(() => setLoading(false))
   }, [])
 
   const handleSelectTicket = (id: string) => {
+    if (paused) return
     setQty((prev) => ({
       ...prev,
       [id]: (prev[id] || 0) + 1,
@@ -110,7 +113,18 @@ export default function TicketListPage() {
         </button>
       </div>
 
-      {salesClosed && (
+      {paused ? (
+        <div className="mb-6 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/60 rounded-2xl p-5 flex gap-3">
+          <svg className="w-6 h-6 shrink-0 text-amber-600 dark:text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+            <circle cx="12" cy="12" r="9" />
+            <path strokeLinecap="round" d="M10 9v6M14 9v6" />
+          </svg>
+          <div>
+            <p className="text-sm font-semibold text-amber-800 dark:text-amber-300">{t({ ID: 'Event ini masih dijeda sebentar', EN: 'This event is temporarily paused' })}</p>
+            <p className="text-xs text-amber-700/80 dark:text-amber-400 mt-0.5">{t({ ID: 'Pemesanan tiket belum dibuka. Cek kembali sebentar lagi ya.', EN: 'Ticket booking is not open yet. Please check back shortly.' })}</p>
+          </div>
+        </div>
+      ) : salesClosed && (
         <div className="mb-6 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 rounded-2xl p-5 flex gap-3">
           <span className="text-xl shrink-0">🔴</span>
           <div>
@@ -126,8 +140,10 @@ export default function TicketListPage() {
           {tickets.map((ticket) => {
             const soldOut = ticket.sisa_kuota <= 0
             const inactive = (ticket.status ?? 'aktif') === 'nonaktif'
-            const closed = salesClosed || soldOut || inactive
-            const closedLabel = salesClosed
+            const closed = paused || salesClosed || soldOut || inactive
+            const closedLabel = paused
+              ? t({ ID: 'Dijeda', EN: 'Paused' })
+              : salesClosed
               ? t({ ID: 'Ditutup', EN: 'Closed' })
               : inactive
                 ? t({ ID: 'Selesai', EN: 'Ended' })
@@ -294,7 +310,14 @@ export default function TicketListPage() {
               </div>
             </div>
 
-            {hasItems ? (
+            {paused ? (
+              <button
+                disabled
+                className="block w-full text-center bg-amber-100 text-amber-700 text-sm font-semibold py-3.5 rounded-xl mt-5 cursor-not-allowed"
+              >
+                {t({ ID: 'Event sedang dijeda', EN: 'Event temporarily paused' })}
+              </button>
+            ) : hasItems ? (
               <Link
                 href={checkoutUrl}
                 className="block text-center bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-semibold py-3.5 rounded-xl mt-5 shadow-xs transition-colors active:scale-[0.99]"
@@ -318,7 +341,11 @@ export default function TicketListPage() {
         label={t({ ID: 'Total Pembayaran', EN: 'Total Payment' })}
         value={formatRupiah(total)}
       >
-        {hasItems ? (
+        {paused ? (
+          <span className="inline-flex items-center bg-amber-100 text-amber-700 text-sm font-semibold px-6 py-3 rounded-full select-none">
+            {t({ ID: 'Dijeda sebentar', EN: 'Temporarily paused' })}
+          </span>
+        ) : hasItems ? (
           <Link
             href={checkoutUrl}
             className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-semibold px-6 py-3 rounded-full shadow-xs"

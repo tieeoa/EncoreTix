@@ -223,7 +223,7 @@ export default function SuperAdminVouchersPage() {
         <DashboardHeader
           searchValue={search}
           onSearchChange={setSearch}
-          searchPlaceholder="Search voucher code..."
+          searchPlaceholder={t({ ID: 'Cari kode voucher...', EN: 'Search voucher code...' })}
           userName={adminName || 'Super Admin'}
           userRole="Super Admin"
         />

@@ -1,6 +1,4 @@
 import QRCode from 'qrcode'
-import { readFile } from 'node:fs/promises'
-import path from 'node:path'
 import {
   PDFDocument,
   StandardFonts,
@@ -9,6 +7,7 @@ import {
   type PDFImage,
   type PDFPage,
 } from 'pdf-lib'
+import { getPosterJpeg } from './posterImage'
 
 export interface TicketPdfData {
   booking_id: string
@@ -27,6 +26,7 @@ export interface TicketPdfData {
     tanggal: string
     jam: string
     lokasi: string
+    gambar?: string | null
   }
 }
 
@@ -72,7 +72,7 @@ export async function generateTicketPdf(data: TicketPdfData): Promise<Buffer> {
 
   let posterImage: PDFImage | null = null
   try {
-    const posterBytes = await readFile(path.join(process.cwd(), 'public', 'coravfest.jpg'))
+    const posterBytes = await getPosterJpeg(data.event.gambar, 1190, 420)
     posterImage = await pdfDoc.embedJpg(new Uint8Array(posterBytes))
   } catch {
     posterImage = null
@@ -85,35 +85,21 @@ export async function generateTicketPdf(data: TicketPdfData): Promise<Buffer> {
   // Background
   page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(1, 1, 1) })
 
-  // Header band
-  const headerTop = H
-  page.drawRectangle({ x: 0, y: headerTop - 190, width: W, height: 190, color: NAVY })
-
-  page.drawText('E-TICKET', { x: 24, y: headerTop - 42, size: 14, font: fontBold, color: BLUE })
-  page.drawText(data.event.nama_event, { x: 24, y: headerTop - 84, size: 26, font: fontBold, color: rgb(1, 1, 1) })
-  page.drawText(`${data.event.tanggal} · ${data.event.jam}`, {
-    x: 24,
-    y: headerTop - 114,
-    size: 14,
-    font,
-    color: rgb(0.82, 0.85, 0.89),
-  })
-  page.drawText(data.event.lokasi, { x: 24, y: headerTop - 140, size: 13, font, color: rgb(0.61, 0.63, 0.68) })
-
+  // Poster event selebar halaman di bagian atas
+  const bannerHeight = 210
   if (posterImage) {
-    const posterScale = Math.min(200 / posterImage.width, 190 / posterImage.height)
-    const pw = posterImage.width * posterScale
-    const ph = posterImage.height * posterScale
-    page.drawImage(posterImage, {
-      x: W - pw,
-      y: headerTop - ph,
-      width: pw,
-      height: ph,
-    })
+    page.drawImage(posterImage, { x: 0, y: H - bannerHeight, width: W, height: bannerHeight })
   }
 
+  const infoTop = H - bannerHeight
+  page.drawRectangle({ x: 0, y: infoTop - 110, width: W, height: 110, color: NAVY })
+  page.drawText('E-TICKET', { x: 24, y: infoTop - 24, size: 11, font: fontBold, color: BLUE })
+  drawShrinkText(page, fontBold, data.event.nama_event, 24, infoTop - 54, 20, 547, rgb(1, 1, 1))
+  drawShrinkText(page, font, `${data.event.tanggal} · ${data.event.jam}`, 24, infoTop - 80, 11, 547, rgb(0.82, 0.85, 0.89))
+  drawShrinkText(page, font, data.event.lokasi, 24, infoTop - 100, 10, 547, rgb(0.61, 0.63, 0.68))
+
   // Category strip
-  const stripY = headerTop - 190 - 12 - 52 // top of strip
+  const stripY = infoTop - 110 - 12 - 52 // top of strip
   page.drawRectangle({ x: 40, y: stripY, width: 515, height: 52, color: LIGHT })
   drawShrinkText(page, font, 'TIKET', 60, stripY + 36, 12, 200, GRAY)
   drawShrinkText(page, fontBold, `${data.kategori} × ${data.jumlah}`, 60, stripY + 18, 16, 400)

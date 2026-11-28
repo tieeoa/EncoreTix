@@ -283,7 +283,7 @@ export default function AdminMerchVerificationPage() {
         <DashboardHeader
           searchValue={searchFilter}
           onSearchChange={setSearchFilter}
-          searchPlaceholder="Search order or customer..."
+          searchPlaceholder={t({ ID: 'Cari pesanan atau pelanggan...', EN: 'Search order or customer...' })}
           userName={adminName || 'Panitia'}
           userRole="Event Operations"
         />
