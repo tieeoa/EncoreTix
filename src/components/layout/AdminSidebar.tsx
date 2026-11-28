@@ -132,7 +132,6 @@ export default function AdminSidebar() {
         <button
           onClick={() => {
             clearAdminSession('admin')
-            router.push('/admin/login')
           }}
           className="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-sm font-medium text-[#8e9eb5] hover:text-white hover:bg-white/[0.05] transition-colors"
         >

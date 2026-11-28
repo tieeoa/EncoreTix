@@ -12,7 +12,6 @@ interface Message {
 type WidgetPos = { x: number; y: number }
 
 const QUICK_PROMPTS = [
-  'Konser apa saja yang tersedia?',
   'Metode pembayaran apa saja yang didukung?',
   'Bagaimana cara mengecek status tiket saya?',
   'Cara ambil official merchandise di mana?',

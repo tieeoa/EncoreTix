@@ -164,7 +164,6 @@ export default function SuperAdminSidebar() {
 
   const handleLogout = () => {
     clearAdminSession('superadmin')
-    router.push('/superadmin/login')
   }
 
   const sidebarBody = (

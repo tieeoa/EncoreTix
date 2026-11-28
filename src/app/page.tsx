@@ -55,16 +55,23 @@ function Countdown({ target }: { target: Date | null }) {
   if (!target) return null
 
   return (
-    <div className="flex gap-1.5 sm:gap-2 md:gap-3 text-center text-white">
+    <div className="flex items-end gap-2 text-center text-white">
       {[
         [t({ ID: 'Hari', EN: 'Days' }), c.hari],
         [t({ ID: 'Jam', EN: 'Hours' }), c.jam],
         [t({ ID: 'Menit', EN: 'Minutes' }), c.menit],
         [t({ ID: 'Detik', EN: 'Seconds' }), c.detik],
-      ].map(([label, val]) => (
-        <div key={String(label)} className="bg-white/10 backdrop-blur-md border border-white/20 rounded-lg sm:rounded-xl px-2 py-1.5 md:px-3 md:py-2 min-w-[46px] sm:min-w-[54px] md:min-w-[60px] shadow-lg shadow-black/20">
-          <div className="text-sm sm:text-base md:text-xl font-bold tabular-nums leading-none">{String(val).padStart(2, '0')}</div>
-          <div className="text-[8px] sm:text-[9px] md:text-[10px] uppercase tracking-widest text-indigo-200 mt-1">{String(label)}</div>
+      ].map(([label, val], i) => (
+        <div key={String(label)} className="flex items-end gap-2">
+          {i > 0 && <span className="pb-1 text-lg font-light text-white/40">:</span>}
+          <div>
+            <div className="text-xl lg:text-2xl font-bold tabular-nums leading-none tracking-tight">
+              {String(val).padStart(2, '0')}
+            </div>
+            <div className="mt-1 text-[8px] font-medium uppercase tracking-[0.2em] text-indigo-200">
+              {String(label)}
+            </div>
+          </div>
         </div>
       ))}
     </div>
@@ -224,7 +231,7 @@ export default function Home() {
         </div>
       )}
       {/* Hero */}
-      <div className="relative rounded-3xl overflow-hidden min-h-[300px] md:h-[420px] flex shadow-2xl shadow-indigo-950/30">
+      <div className="relative rounded-3xl overflow-hidden min-h-[320px] md:h-[420px] flex shadow-2xl shadow-indigo-950/30">
         {event?.gambar ? (
           <Image
             src={event.gambar}
@@ -237,14 +244,20 @@ export default function Home() {
         ) : (
           <div className="absolute inset-0 bg-gradient-to-br from-indigo-950 via-slate-900 to-violet-950" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/35 to-black/25" />
-        <div className="absolute inset-0 bg-gradient-to-r from-indigo-950/50 via-transparent to-transparent" />
-        {/* Glow dekoratif */}
-        <div className="absolute -top-24 -right-24 w-96 h-96 bg-indigo-600/30 blur-3xl rounded-full pointer-events-none" />
-        <div className="absolute bottom-0 -left-20 w-72 h-72 bg-violet-600/20 blur-3xl rounded-full pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-black/10" />
+        <div className="absolute inset-0 bg-gradient-to-r from-indigo-950/40 via-transparent to-transparent" />
 
-        <div className="relative mt-auto w-full p-5 sm:p-6 md:p-10 flex flex-col md:flex-row md:items-end gap-4 sm:gap-6 justify-between">
-          <div className="max-w-2xl">
+        {countdownTarget && (
+          <div className="absolute bottom-5 right-5 z-10 hidden rounded-2xl border border-white/15 bg-black/45 px-4 py-3 shadow-xl shadow-black/30 backdrop-blur-md lg:block md:bottom-8 md:right-8">
+            <p className="mb-2 text-[9px] font-semibold tracking-[0.2em] uppercase text-indigo-200">
+              {t({ ID: 'Menghitung mundur', EN: 'Counting down' })}
+            </p>
+            <Countdown target={countdownTarget} />
+          </div>
+        )}
+
+        <div className="relative mt-auto w-full p-5 sm:p-6 md:p-8">
+          <div className="max-w-xl">
             {/* Badge status */}
             {event && salesClosed ? (
               <span className="inline-flex items-center gap-2 text-[10px] sm:text-[11px] font-semibold tracking-widest uppercase text-amber-200 bg-amber-400/15 backdrop-blur-md border border-amber-300/30 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full mb-3">
@@ -264,46 +277,41 @@ export default function Home() {
               </span>
             )}
 
-            <h1 className={`${bebasNeue.className} text-3xl sm:text-5xl md:text-7xl text-white tracking-wide leading-[0.95] drop-shadow-lg break-words`}>
+            <h1 className={`${bebasNeue.className} text-3xl sm:text-4xl md:text-5xl lg:text-6xl text-white tracking-wide leading-none drop-shadow-lg break-words`}>
               {heroTitle}
             </h1>
 
-            {/* Chip info tanggal / venue / jam */}
+            {/* Info tanggal / jam / venue */}
             {event && (
-              <>
-                <p className="sm:hidden mt-3 text-[11px] leading-relaxed text-white/85">
-                  {[event.tanggal ? formatTanggal(event.tanggal) : '', eventLokasi(event), eventJam(event)]
-                    .filter(Boolean)
-                    .join(' · ')}
-                </p>
-                <div className="hidden sm:flex flex-wrap items-center gap-1.5 sm:gap-2 mt-3">
-                {event.tanggal && (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full">
-                    <svg className="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                    </svg>
-                    {formatTanggal(event.tanggal)}
-                  </span>
-                )}
+              <div className="mt-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  {event.tanggal && (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 rounded-full">
+                      <svg className="w-3.5 h-3.5 shrink-0 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                      </svg>
+                      {formatTanggal(event.tanggal)}
+                    </span>
+                  )}
+                  {eventJam(event) && (
+                    <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 rounded-full">
+                      <svg className="w-3.5 h-3.5 shrink-0 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      {eventJam(event)}
+                    </span>
+                  )}
+                </div>
                 {eventLokasi(event) && (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full">
-                    <svg className="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
+                  <p className="mt-2 flex max-w-full items-start gap-1.5 text-[11px] sm:text-xs leading-snug text-white/90 drop-shadow">
+                    <svg className="w-3.5 h-3.5 mt-0.5 shrink-0 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
                       <path strokeLinecap="round" strokeLinejoin="round" d="M17.657 16.657L13.414 20.9a2 2 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                       <path strokeLinecap="round" strokeLinejoin="round" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                     </svg>
-                    {eventLokasi(event)}
-                  </span>
+                    <span className="min-w-0 break-words">{eventLokasi(event)}</span>
+                  </p>
                 )}
-                {eventJam(event) && (
-                  <span className="inline-flex items-center gap-1.5 text-[11px] sm:text-xs text-white bg-white/10 backdrop-blur-md border border-white/20 px-2.5 py-1 sm:px-3 sm:py-1.5 rounded-full">
-                    <svg className="w-3.5 h-3.5 text-indigo-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth="2">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    {eventJam(event)}
-                  </span>
-                )}
-                </div>
-              </>
+              </div>
             )}
             {!event && (
               <p className="text-sm text-gray-300 mt-4">{heroSubtitle}</p>
@@ -311,18 +319,18 @@ export default function Home() {
 
             {/* CTA */}
             {event && (
-              <div className="hidden sm:flex flex-wrap items-center gap-2.5 sm:gap-3 mt-5">
+              <div className="hidden sm:flex flex-wrap items-center gap-2.5 mt-4">
                 {salesClosed ? (
                   <Link
                     href="/tiket"
-                    className="inline-flex items-center gap-2 bg-white/10 border border-white/30 text-white text-sm font-semibold px-5 py-3 sm:px-7 sm:py-3.5 rounded-full transition-all hover:bg-white/15"
+                    className="inline-flex items-center gap-2 bg-white/10 border border-white/30 text-white text-[13px] font-semibold px-5 py-2.5 rounded-full transition-all hover:bg-white/15"
                   >
                     {t({ ID: 'Penjualan Tiket Ditutup', EN: 'Ticket Sales Closed' })}
                   </Link>
                 ) : (
                   <Link
                     href="/tiket"
-                    className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-sm font-bold px-5 py-3 sm:px-7 sm:py-3.5 rounded-full transition-all shadow-lg shadow-indigo-950/50 hover:shadow-indigo-900/60 hover:-translate-y-0.5"
+                    className="inline-flex items-center gap-2 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-[13px] font-bold px-5 py-2.5 rounded-full transition-all shadow-lg shadow-indigo-950/50 hover:shadow-indigo-900/60 hover:-translate-y-0.5"
                   >
                     {t({ ID: 'Beli Tiket Sekarang', EN: 'Buy Tickets Now' })}
                     <span aria-hidden>→</span>
@@ -331,19 +339,12 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => scrollToSection('Line Up')}
-                  className="hidden sm:inline-flex items-center gap-2 text-white text-sm font-semibold px-7 py-3.5 rounded-full border border-white/30 bg-white/5 backdrop-blur-md hover:bg-white/15 transition-all cursor-pointer"
+                  className="inline-flex items-center gap-2 text-white text-[13px] font-semibold px-5 py-2.5 rounded-full border border-white/30 bg-white/5 backdrop-blur-md hover:bg-white/15 transition-all cursor-pointer"
                 >
                   {t({ ID: 'Lihat Line Up', EN: 'View Line Up' })}
                 </button>
               </div>
             )}
-          </div>
-
-          <div className="shrink-0">
-            <p className="hidden sm:block text-[10px] font-semibold tracking-[0.25em] uppercase text-indigo-200 mb-2">
-              {t({ ID: 'Menghitung mundur', EN: 'Counting down' })}
-            </p>
-            <Countdown target={countdownTarget} />
           </div>
         </div>
       </div>
